@@ -172,27 +172,45 @@ curl http://localhost:11434/v1/chat/completions \
 
 If this curl command fails, fix Ollama before running Agent.
 
-## Allow writes and commands
+## Approval modes
 
-By default, the agent asks approval before using tools that can change files or run commands:
+Default mode is `safe`.
+
+In `safe` mode, the agent asks before tools that can change files or run commands:
 
 - `write`
 - `update`
 - `bash`
 
-To skip approval prompts, add `--auto-approve`:
+In the TUI these tools are labeled with `Approval required · ...`, so approval requests are easier to notice even when tool cards are collapsed.
+
+Choose safe mode explicitly:
 
 ```bash
-npm run cli -- ai \
-  --cwd /path/to/your/project \
-  --prompt "Add a usage section to README.md" \
+npm run tui -- \
+  --approval-mode safe \
   --model qwen2.5-coder:7b \
   --base-url http://localhost:11434/v1 \
-  --api-key ollama \
-  --auto-approve
+  --api-key ollama
 ```
 
-Use `--auto-approve` only in a trusted or disposable workspace.
+Choose auto mode when working in a trusted or disposable workspace:
+
+```bash
+npm run tui -- \
+  --approval-mode auto \
+  --model qwen2.5-coder:7b \
+  --base-url http://localhost:11434/v1 \
+  --api-key ollama
+```
+
+Shortcut:
+
+```bash
+npm run tui -- --auto-approve
+```
+
+`--auto-approve` is the same as `--approval-mode auto`.
 
 ## CLI reference
 
@@ -212,7 +230,8 @@ Options:
 --api-key <key>         API key.
 --provider-name <name>  Name used in logs.
 --max-steps <count>     Maximum model/tool loop steps. Default: 20.
---auto-approve          Do not pause for write/update/bash approvals.
+--approval-mode <mode>  Approval mode: safe|auto. Default: safe.
+--auto-approve          Shortcut for --approval-mode auto.
 -h, --help              Show help.
 ```
 
@@ -231,10 +250,11 @@ Options:
 --api-key <key>              API key.
 --provider-name <name>       Name used in logs.
 --max-steps <count>          Maximum model/tool loop steps. Default: 20.
+--approval-mode <mode>       Approval mode: safe|auto. Default: safe.
+--auto-approve               Shortcut for --approval-mode auto.
 --context-size <tokens>      Show context usage percentage in the TUI title. Default: 32768.
 --tool-display <mode>        Tool cards: full|collapsed|auto-collapsed|hidden. Default: collapsed.
 --reasoning-display <mode>   Reasoning cards: full|collapsed|auto-collapsed|hidden. Default: collapsed.
---auto-approve               Do not pause for write/update/bash approvals.
 -h, --help                   Show help.
 ```
 

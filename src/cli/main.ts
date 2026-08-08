@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import type { ApprovalMode } from "../ai/ai-tools.js";
 import { runOpenAICompatibleAi } from "../ai/openai-compatible-ai.js";
 import { runOpenAICompatibleAiTui } from "../tui/ai-tui.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const DEFAULT_PROVIDER_NAME = "openai-compatible";
 const DEFAULT_MAX_STEPS = "20";
+const DEFAULT_APPROVAL_MODE: ApprovalMode = "safe";
 const DEFAULT_TUI_PART_DISPLAY = "collapsed";
 const DEFAULT_TUI_CONTEXT_SIZE = "32768";
+const APPROVAL_MODE_VALUES = ["safe", "auto"] as const;
 const PART_DISPLAY_MODES = ["full", "collapsed", "auto-collapsed", "hidden"] as const;
 
 type TerminalPartDisplayMode = typeof PART_DISPLAY_MODES[number];
@@ -19,6 +22,7 @@ type SharedAgentCommandOptions = {
   readonly apiKey?: string;
   readonly providerName?: string;
   readonly maxSteps: string;
+  readonly approvalMode: string;
   readonly autoApprove?: boolean;
 };
 
@@ -76,7 +80,8 @@ function addSharedAgentOptions(command: Command): Command {
     .option("--api-key <key>", "API key", process.env.OPENAI_API_KEY)
     .option("--provider-name <name>", "provider name for logs", DEFAULT_PROVIDER_NAME)
     .option("--max-steps <count>", "maximum tool loop steps", DEFAULT_MAX_STEPS)
-    .option("--auto-approve", "allow write/update/bash tools without approval interruption");
+    .option("--approval-mode <mode>", `approval mode: ${APPROVAL_MODE_VALUES.join("|")}`, DEFAULT_APPROVAL_MODE)
+    .option("--auto-approve", "shortcut for --approval-mode auto");
 }
 
 function addTuiOptions(command: Command): Command {
@@ -95,7 +100,7 @@ function toRuntimeOptions(options: SharedAgentCommandOptions) {
     apiKey: options.apiKey,
     providerName: options.providerName,
     maxSteps: parseMaxSteps(options.maxSteps),
-    approvalMode: options.autoApprove === true ? "auto" as const : "safe" as const,
+    approvalMode: options.autoApprove === true ? "auto" as const : parseApprovalMode(options.approvalMode),
   };
 }
 
@@ -114,6 +119,18 @@ function parsePositiveInteger(value: string, optionName: string): number {
   }
 
   return parsed;
+}
+
+function parseApprovalMode(value: string): ApprovalMode {
+  if (isApprovalMode(value)) {
+    return value;
+  }
+
+  throw new Error(`--approval-mode must be one of: ${APPROVAL_MODE_VALUES.join(", ")}`);
+}
+
+function isApprovalMode(value: string): value is ApprovalMode {
+  return APPROVAL_MODE_VALUES.some((mode) => mode === value);
 }
 
 function parsePartDisplayMode(value: string, optionName: string): TerminalPartDisplayMode {
