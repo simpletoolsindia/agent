@@ -8,12 +8,14 @@ const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const DEFAULT_PROVIDER_NAME = "openai-compatible";
 const DEFAULT_MAX_STEPS = "20";
 const DEFAULT_APPROVAL_MODE: ApprovalMode = "safe";
-const DEFAULT_TUI_PART_DISPLAY = "collapsed";
 const DEFAULT_TUI_CONTEXT_SIZE = "32768";
+const DEFAULT_UI_DENSITY = "compact";
 const APPROVAL_MODE_VALUES = ["safe", "auto"] as const;
 const PART_DISPLAY_MODES = ["full", "collapsed", "auto-collapsed", "hidden"] as const;
+const UI_DENSITY_VALUES = ["compact", "normal", "debug"] as const;
 
 type TerminalPartDisplayMode = typeof PART_DISPLAY_MODES[number];
+type UiDensity = typeof UI_DENSITY_VALUES[number];
 
 type SharedAgentCommandOptions = {
   readonly cwd: string;
@@ -32,8 +34,27 @@ type OneShotAgentCommandOptions = SharedAgentCommandOptions & {
 
 type TuiCommandOptions = SharedAgentCommandOptions & {
   readonly contextSize?: string;
-  readonly toolDisplay: string;
-  readonly reasoningDisplay: string;
+  readonly uiDensity: string;
+  readonly toolDisplay?: string;
+  readonly reasoningDisplay?: string;
+};
+
+const UI_DENSITY_PRESETS: Record<UiDensity, {
+  readonly toolDisplay: TerminalPartDisplayMode;
+  readonly reasoningDisplay: TerminalPartDisplayMode;
+}> = {
+  compact: {
+    toolDisplay: "collapsed",
+    reasoningDisplay: "collapsed",
+  },
+  normal: {
+    toolDisplay: "auto-collapsed",
+    reasoningDisplay: "collapsed",
+  },
+  debug: {
+    toolDisplay: "full",
+    reasoningDisplay: "full",
+  },
 };
 
 const program = new Command();
@@ -62,11 +83,12 @@ addTuiOptions(
       .description("Open the interactive terminal UI"),
   ),
 ).action(async (options: TuiCommandOptions) => {
+  const display = resolveTuiDisplay(options);
   await runOpenAICompatibleAiTui({
     ...toRuntimeOptions(options),
     contextSize: parseOptionalPositiveInteger(options.contextSize, "--context-size"),
-    toolDisplay: parsePartDisplayMode(options.toolDisplay, "--tool-display"),
-    reasoningDisplay: parsePartDisplayMode(options.reasoningDisplay, "--reasoning-display"),
+    toolDisplay: display.toolDisplay,
+    reasoningDisplay: display.reasoningDisplay,
   });
 });
 
@@ -88,8 +110,9 @@ function addTuiOptions(command: Command): Command {
   const displayModes = PART_DISPLAY_MODES.join("|");
   return command
     .option("--context-size <tokens>", "show context usage percentage in the TUI title", DEFAULT_TUI_CONTEXT_SIZE)
-    .option("--tool-display <mode>", `tool display: ${displayModes}`, DEFAULT_TUI_PART_DISPLAY)
-    .option("--reasoning-display <mode>", `reasoning display: ${displayModes}`, DEFAULT_TUI_PART_DISPLAY);
+    .option("--ui-density <mode>", `UI preset: ${UI_DENSITY_VALUES.join("|")}`, DEFAULT_UI_DENSITY)
+    .option("--tool-display <mode>", `override tool display: ${displayModes}`)
+    .option("--reasoning-display <mode>", `override reasoning display: ${displayModes}`);
 }
 
 function toRuntimeOptions(options: SharedAgentCommandOptions) {
@@ -101,6 +124,23 @@ function toRuntimeOptions(options: SharedAgentCommandOptions) {
     providerName: options.providerName,
     maxSteps: parseMaxSteps(options.maxSteps),
     approvalMode: options.autoApprove === true ? "auto" as const : parseApprovalMode(options.approvalMode),
+  };
+}
+
+function resolveTuiDisplay(options: TuiCommandOptions): {
+  readonly toolDisplay: TerminalPartDisplayMode;
+  readonly reasoningDisplay: TerminalPartDisplayMode;
+} {
+  const density = parseUiDensity(options.uiDensity);
+  const preset = UI_DENSITY_PRESETS[density];
+
+  return {
+    toolDisplay: options.toolDisplay === undefined
+      ? preset.toolDisplay
+      : parsePartDisplayMode(options.toolDisplay, "--tool-display"),
+    reasoningDisplay: options.reasoningDisplay === undefined
+      ? preset.reasoningDisplay
+      : parsePartDisplayMode(options.reasoningDisplay, "--reasoning-display"),
   };
 }
 
@@ -131,6 +171,18 @@ function parseApprovalMode(value: string): ApprovalMode {
 
 function isApprovalMode(value: string): value is ApprovalMode {
   return APPROVAL_MODE_VALUES.some((mode) => mode === value);
+}
+
+function parseUiDensity(value: string): UiDensity {
+  if (isUiDensity(value)) {
+    return value;
+  }
+
+  throw new Error(`--ui-density must be one of: ${UI_DENSITY_VALUES.join(", ")}`);
+}
+
+function isUiDensity(value: string): value is UiDensity {
+  return UI_DENSITY_VALUES.some((density) => density === value);
 }
 
 function parsePartDisplayMode(value: string, optionName: string): TerminalPartDisplayMode {

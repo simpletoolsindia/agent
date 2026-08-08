@@ -1,5 +1,6 @@
 import { runAgentTUI, type TerminalPartDisplayMode } from "@ai-sdk/tui";
 import { isStepCount, ToolLoopAgent } from "ai";
+import { basename, resolve } from "node:path";
 import { createAiToolBundle, type ApprovalMode } from "../ai/ai-tools.js";
 import {
   CODING_INSTRUCTIONS,
@@ -26,7 +27,8 @@ const DEFAULT_REASONING_DISPLAY: TerminalPartDisplayMode = "collapsed";
 export async function runOpenAICompatibleAiTui(options: OpenAICompatibleAiTuiOptions): Promise<void> {
   const logger = new JsonConsoleLogger("tui", "warn");
   const harness = createHarness(options.cwd, logger);
-  const toolBundle = createAiToolBundle(harness.registry, harness.context, options.approvalMode ?? "safe");
+  const approvalMode = options.approvalMode ?? "safe";
+  const toolBundle = createAiToolBundle(harness.registry, harness.context, approvalMode);
 
   const runtime = new ToolLoopAgent({
     model: createOpenAICompatibleChatModel(options),
@@ -37,11 +39,16 @@ export async function runOpenAICompatibleAiTui(options: OpenAICompatibleAiTuiOpt
   });
 
   await runAgentTUI({
-    title: "Harness AI",
+    title: formatTuiTitle(options.cwd, options.model, approvalMode),
     agent: runtime,
     tools: options.toolDisplay ?? DEFAULT_TOOL_DISPLAY,
     reasoning: options.reasoningDisplay ?? DEFAULT_REASONING_DISPLAY,
     responseStatistics: "outputTokensPerSecond",
     contextSize: options.contextSize,
   });
+}
+
+function formatTuiTitle(cwd: string, model: string, approvalMode: ApprovalMode): string {
+  const workspaceName = basename(resolve(cwd)) || resolve(cwd);
+  return `Harness AI · ${workspaceName} · ${model} · ${approvalMode}`;
 }

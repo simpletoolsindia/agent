@@ -127,7 +127,7 @@ npm run cli -- ai \
   --api-key ollama
 ```
 
-Run the terminal UI. Tool calls default to compact one-line cards so long tool-heavy sessions do not flood the screen:
+Run the terminal UI. The default UI density is `compact`, so tool-heavy sessions stay readable:
 
 ```bash
 npm run tui -- \
@@ -135,12 +135,24 @@ npm run tui -- \
   --model qwen2.5-coder:7b \
   --base-url http://localhost:11434/v1 \
   --api-key ollama \
-  --context-size 32768 \
-  --tool-display collapsed \
-  --reasoning-display collapsed
+  --ui-density compact
 ```
 
-`--context-size` defaults to `32768` and shows context usage in the TUI title so the user can see activity instead of a silent wait. Override it if your model has a different context window.
+The TUI title shows the workspace, model, and approval mode. `--context-size` defaults to `32768` and shows context usage in the title. Override it if your model has a different context window.
+
+UI density presets:
+
+| Preset | Tool cards | Reasoning | Use when |
+| --- | --- | --- | --- |
+| `compact` | collapsed | collapsed | Default. Best for long tool-heavy sessions. |
+| `normal` | auto-collapsed | collapsed | Shows the latest active tool with more detail. |
+| `debug` | full | full | Shows full tool input/output and reasoning. |
+
+Override a preset when needed:
+
+```bash
+npm run tui -- --ui-density compact --tool-display auto-collapsed
+```
 
 ## Important Ollama settings
 
@@ -253,8 +265,9 @@ Options:
 --approval-mode <mode>       Approval mode: safe|auto. Default: safe.
 --auto-approve               Shortcut for --approval-mode auto.
 --context-size <tokens>      Show context usage percentage in the TUI title. Default: 32768.
---tool-display <mode>        Tool cards: full|collapsed|auto-collapsed|hidden. Default: collapsed.
---reasoning-display <mode>   Reasoning cards: full|collapsed|auto-collapsed|hidden. Default: collapsed.
+--ui-density <mode>          UI preset: compact|normal|debug. Default: compact.
+--tool-display <mode>        Override tool cards: full|collapsed|auto-collapsed|hidden.
+--reasoning-display <mode>   Override reasoning: full|collapsed|auto-collapsed|hidden.
 -h, --help                   Show help.
 ```
 
