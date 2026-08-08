@@ -1,28 +1,42 @@
-# Harness Tools Prototype
+# Agent
 
-A small TypeScript coding harness with five tools:
+A TypeScript coding-agent prototype with exactly five workspace tools:
 
-- `read` — reads files and directories inside the workspace.
-- `search` — fast text search powered by ripgrep.
-- `write` — creates or replaces files atomically.
-- `update` — hash-guarded line updates for safe edits.
-- `bash` — runs focused non-interactive commands.
+| Tool | Purpose |
+| --- | --- |
+| `read` | Read files or list directories inside the workspace. |
+| `search` | Search code quickly with ripgrep. |
+| `write` | Create or replace a file atomically. |
+| `update` | Edit exact line ranges with file-hash and range-hash checks. |
+| `bash` | Run one focused, non-interactive shell command. |
 
-The project includes:
+It can run with Ollama through Ollama's OpenAI-compatible API.
 
-- a CLI command for one-shot agent runs,
-- an interactive terminal UI,
-- an OpenAI-compatible model adapter,
-- benchmarks and correctness checks.
+## What you get
+
+- One-shot CLI agent: `npm run cli -- ai ...`
+- Interactive terminal UI: `npm run tui -- ...`
+- Local Ollama support: `--base-url http://localhost:11434/v1 --api-key ollama`
+- Safer edits: `update` refuses stale file hashes and wrong line ranges
+- Benchmarks and correctness checks
 
 ## Requirements
 
-- Node.js 20+
+Install these first:
+
+- Node.js 20 or newer
 - npm
 - Git
-- Ollama, for local model usage
+- Ollama, if you want local models
 
-## Install from GitHub
+Check Node:
+
+```bash
+node --version
+npm --version
+```
+
+## Install Agent
 
 ```bash
 git clone https://github.com/simpletoolsindia/agent.git
@@ -31,61 +45,115 @@ npm install
 npm run build
 ```
 
-Check the CLI:
+Check that the CLI works:
 
 ```bash
 npm run cli -- --help
 ```
 
-Expected commands:
+You should see:
 
 ```txt
-harness ai   Run one OpenAI-compatible LLM request
-harness tui  Open the interactive terminal UI
+Commands:
+  ai   Run one OpenAI-compatible LLM request
+  tui  Open the interactive terminal UI
 ```
 
-## Set up Ollama
+## Install and start Ollama
 
-Install Ollama from the official site:
+Download Ollama:
 
 ```txt
 https://ollama.com/download
 ```
 
-On Linux, Ollama's install command is usually:
+Linux install command:
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
-Start Ollama if it is not already running:
+Start Ollama:
 
 ```bash
 ollama serve
 ```
 
-Pull a model:
+If Ollama is already installed as a service, `ollama serve` may say the address is already in use. That is fine.
+
+Check Ollama:
+
+```bash
+curl http://localhost:11434/v1/models
+```
+
+## Pull a model
+
+Small coding model:
 
 ```bash
 ollama pull qwen2.5-coder:7b
 ```
 
-You can use another tool-capable model instead, for example:
+Stronger tool-calling models may work better:
 
 ```bash
 ollama pull gpt-oss:20b
 ollama pull qwen3:8b
 ```
 
-Ollama exposes an OpenAI-compatible API at:
+Use the same model name in `--model`.
+
+## Quick start with Ollama
+
+Run one request:
+
+```bash
+npm run cli -- ai \
+  --prompt "Read package.json and explain the scripts" \
+  --model qwen2.5-coder:7b \
+  --base-url http://localhost:11434/v1 \
+  --api-key ollama
+```
+
+Run against another project:
+
+```bash
+npm run cli -- ai \
+  --cwd /path/to/your/project \
+  --prompt "Search for TODO comments and summarize them" \
+  --model qwen2.5-coder:7b \
+  --base-url http://localhost:11434/v1 \
+  --api-key ollama
+```
+
+Run the terminal UI:
+
+```bash
+npm run tui -- \
+  --cwd /path/to/your/project \
+  --model qwen2.5-coder:7b \
+  --base-url http://localhost:11434/v1 \
+  --api-key ollama
+```
+
+## Important Ollama settings
+
+Use this base URL:
 
 ```txt
 http://localhost:11434/v1
 ```
 
-Ollama requires an API key field for OpenAI-compatible clients, but the value is ignored. Use `ollama`.
+Use this API key:
 
-Quick API check:
+```txt
+ollama
+```
+
+Ollama ignores the key value, but OpenAI-compatible clients require the field.
+
+Quick raw Ollama test:
 
 ```bash
 curl http://localhost:11434/v1/chat/completions \
@@ -97,113 +165,90 @@ curl http://localhost:11434/v1/chat/completions \
   }'
 ```
 
-## Run one agent request with Ollama
+If this curl command fails, fix Ollama before running Agent.
 
-Use the `ai` command:
+## Allow writes and commands
 
-```bash
-npm run cli -- ai \
-  --prompt "Read package.json and explain the scripts" \
-  --model qwen2.5-coder:7b \
-  --base-url http://localhost:11434/v1 \
-  --api-key ollama
-```
+By default, the agent asks approval before using tools that can change files or run commands:
 
-Use a different workspace:
+- `write`
+- `update`
+- `bash`
+
+To skip approval prompts, add `--auto-approve`:
 
 ```bash
 npm run cli -- ai \
   --cwd /path/to/your/project \
-  --prompt "Search for TODO comments and summarize them" \
-  --model qwen2.5-coder:7b \
-  --base-url http://localhost:11434/v1 \
-  --api-key ollama
-```
-
-Allow file writes, updates, and bash commands without approval prompts:
-
-```bash
-npm run cli -- ai \
-  --cwd /path/to/your/project \
-  --prompt "Add a small README usage section" \
+  --prompt "Add a usage section to README.md" \
   --model qwen2.5-coder:7b \
   --base-url http://localhost:11434/v1 \
   --api-key ollama \
   --auto-approve
 ```
 
-Use `--auto-approve` only in a disposable or trusted workspace.
+Use `--auto-approve` only in a trusted or disposable workspace.
 
-## Run the interactive TUI with Ollama
+## CLI reference
 
-```bash
-npm run tui -- \
-  --model qwen2.5-coder:7b \
-  --base-url http://localhost:11434/v1 \
-  --api-key ollama
-```
-
-With a target workspace:
+### One-shot agent
 
 ```bash
-npm run tui -- \
-  --cwd /path/to/your/project \
-  --model qwen2.5-coder:7b \
-  --base-url http://localhost:11434/v1 \
-  --api-key ollama
+npm run cli -- ai --prompt "your task" [options]
 ```
 
-The TUI shows the assistant output, tool cards, reasoning sections, and approval prompts for unsafe tools unless `--auto-approve` is passed.
-
-## Available CLI options
-
-### `harness ai`
+Options:
 
 ```txt
--p, --prompt <prompt>   user prompt to send to the AI
---cwd <path>            workspace root
---model <model>         model id
---base-url <url>        OpenAI-compatible API base URL
---api-key <key>         API key
---provider-name <name>  provider name for logs
---max-steps <count>     maximum tool loop steps
---auto-approve          allow write/update/bash tools without approval
--h, --help              display help for command
+-p, --prompt <prompt>   Required. User task for the agent.
+--cwd <path>            Workspace root. Default: current project.
+--model <model>         Model name. Default: gpt-4o-mini.
+--base-url <url>        OpenAI-compatible API base URL.
+--api-key <key>         API key.
+--provider-name <name>  Name used in logs.
+--max-steps <count>     Maximum model/tool loop steps. Default: 20.
+--auto-approve          Do not pause for write/update/bash approvals.
+-h, --help              Show help.
 ```
 
-### `harness tui`
+### Terminal UI
+
+```bash
+npm run tui -- [options]
+```
+
+Options:
 
 ```txt
---cwd <path>            workspace root
---model <model>         model id
---base-url <url>        OpenAI-compatible API base URL
---api-key <key>         API key
---provider-name <name>  provider name for logs
---max-steps <count>     maximum tool loop steps
---auto-approve          allow write/update/bash tools without approval
--h, --help              display help for command
+--cwd <path>            Workspace root. Default: current project.
+--model <model>         Model name. Default: gpt-4o-mini.
+--base-url <url>        OpenAI-compatible API base URL.
+--api-key <key>         API key.
+--provider-name <name>  Name used in logs.
+--max-steps <count>     Maximum model/tool loop steps. Default: 20.
+--auto-approve          Do not pause for write/update/bash approvals.
+-h, --help              Show help.
 ```
 
-## Tool safety model
+## Safety model
 
-Default approval behavior:
+| Tool | Reads files | Changes files | Runs commands | Approval by default |
+| --- | --- | --- | --- | --- |
+| `read` | yes | no | no | no |
+| `search` | yes | no | yes, ripgrep only | no |
+| `write` | no | yes | no | yes |
+| `update` | no | yes | no | yes |
+| `bash` | maybe | maybe | yes | yes |
 
-| Tool | Reads data | Writes data | Approval |
-| --- | --- | --- | --- |
-| `read` | yes | no | not required |
-| `search` | yes | no | not required |
-| `write` | no | yes | required |
-| `update` | no | yes | required |
-| `bash` | depends | depends | required |
+`update` is designed for safer edits. It requires:
 
-`update` is safer than blind replacement because it requires:
+1. current file hash,
+2. expected edited-range hash,
+3. exact start line,
+4. exact end line,
+5. non-overlapping edit ranges.
 
-- the current file hash,
-- the expected range hash,
-- exact start and end lines,
-- non-overlapping edit ranges.
-
-If a file changes after the model reads it, `update` rejects the edit and asks the model to read again.
+If the file changed after the model read it, the edit is rejected.
 
 ## Development commands
 
@@ -214,17 +259,19 @@ npm run correctness
 npm run benchmark
 ```
 
-## Troubleshooting Ollama
+## Troubleshooting
 
 ### `ECONNREFUSED` or connection failed
 
-Ollama is not running. Start it:
+Ollama is not running.
+
+Start it:
 
 ```bash
 ollama serve
 ```
 
-Then retry:
+Check it:
 
 ```bash
 curl http://localhost:11434/v1/models
@@ -238,34 +285,34 @@ Pull the model:
 ollama pull qwen2.5-coder:7b
 ```
 
-Then retry the harness command.
+Then run Agent again.
 
-### The model answers but does not use tools well
+### Model replies but does not use tools correctly
 
-Use a stronger local model with tool-calling support:
+Try a stronger model:
 
 ```bash
 ollama pull gpt-oss:20b
 npm run cli -- ai \
-  --prompt "Read package.json and summarize scripts" \
+  --prompt "Read package.json and explain scripts" \
   --model gpt-oss:20b \
   --base-url http://localhost:11434/v1 \
   --api-key ollama
 ```
 
-### TUI does not open cleanly
+### TUI has display problems
 
-Use the one-shot CLI first:
+First check the one-shot CLI:
 
 ```bash
 npm run cli -- ai \
-  --prompt "Read package.json and summarize scripts" \
+  --prompt "Read package.json and explain scripts" \
   --model qwen2.5-coder:7b \
   --base-url http://localhost:11434/v1 \
   --api-key ollama
 ```
 
-If that works, retry:
+If that works, retry TUI:
 
 ```bash
 npm run tui -- \
@@ -274,19 +321,17 @@ npm run tui -- \
   --api-key ollama
 ```
 
-## OpenAI-compatible providers
-
-The same harness can use any OpenAI-compatible API:
+## Use another OpenAI-compatible provider
 
 ```bash
 npm run cli -- ai \
   --prompt "Read package.json" \
-  --model your-model-name \
+  --model your-model \
   --base-url https://your-provider.example/v1 \
   --api-key "$API_KEY"
 ```
 
-For OpenAI itself, omit `--base-url`:
+For OpenAI, omit `--base-url`:
 
 ```bash
 npm run cli -- ai \
