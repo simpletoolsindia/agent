@@ -1,5 +1,8 @@
+import type { Stats } from "node:fs";
+import { stat } from "node:fs/promises";
 import { execa } from "execa";
 import type { Tool, ToolContext } from "../core/tool.js";
+import { ToolError } from "../core/tool.js";
 
 export type BashInput = {
   readonly command: string;
@@ -29,7 +32,10 @@ export class BashTool implements Tool<BashInput, BashOutput> {
   };
 
   public async execute(input: BashInput, context: ToolContext): Promise<BashOutput> {
-    const cwd = input.cwd === undefined ? undefined : context.pathPolicy.resolveInside(input.cwd);
+    const cwdInput = input.cwd ?? ".";
+    const cwd = context.pathPolicy.resolveInside(cwdInput);
+    await this.assertDirectory(cwd, cwdInput);
+
     const result = await execa(input.command, [...(input.args ?? [])], {
       cwd,
       reject: false,
@@ -37,8 +43,39 @@ export class BashTool implements Tool<BashInput, BashOutput> {
       maxBuffer: 1024 * 1024,
     });
 
+    if (result.failed && result.exitCode === undefined) {
+      throw new ToolError("Command could not be started; verify the executable name or use an absolute path", "BASH_SPAWN_FAILED", {
+        command: input.command,
+        cwd: cwdInput,
+        stderr: result.stderr,
+      });
+    }
+
     const exitCode = result.exitCode ?? 0;
     context.logger.info("process.run", { command: input.command, exitCode });
     return { exitCode, stdout: result.stdout, stderr: result.stderr };
   }
+
+  private async assertDirectory(absPath: string, inputPath: string): Promise<void> {
+    const meta = await this.statPath(absPath, inputPath);
+    if (!meta.isDirectory()) {
+      throw new ToolError("Working directory is not a directory", "BASH_CWD_NOT_DIRECTORY", { cwd: inputPath });
+    }
+  }
+
+  private async statPath(absPath: string, inputPath: string): Promise<Stats> {
+    try {
+      return await stat(absPath);
+    } catch (error) {
+      if (isErrnoCode(error, "ENOENT")) {
+        throw new ToolError("Working directory does not exist", "BASH_CWD_NOT_FOUND", { cwd: inputPath });
+      }
+
+      throw error;
+    }
+  }
+}
+
+function isErrnoCode(error: unknown, code: string): boolean {
+  return error instanceof Error && (error as NodeJS.ErrnoException).code === code;
 }

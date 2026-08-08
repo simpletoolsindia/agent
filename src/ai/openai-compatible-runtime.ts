@@ -15,7 +15,9 @@ export const CODING_INSTRUCTIONS = [
   "Use read before update, then pass the fresh fileHash and rangeHash to update.",
   "Prefer update for existing files and write for new files or intentional full replacement.",
   "Use bash only for focused verification commands.",
-  "When a tool returns ok=false, inspect its code and recover instead of repeating the same call.",
+  "When a tool returns ok=false, read the code/details, recover with a different action, and continue the loop.",
+  "For PATH_NOT_FOUND, search or list the parent directory instead of stopping.",
+  "For BASH_SPAWN_FAILED, fix the executable name or use an absolute path instead of retrying unchanged.",
 ].join("\n");
 
 /** Builds the chat model once per run while keeping provider setup out of runners. */

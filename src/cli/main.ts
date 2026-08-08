@@ -6,6 +6,11 @@ import { runOpenAICompatibleAiTui } from "../tui/ai-tui.js";
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const DEFAULT_PROVIDER_NAME = "openai-compatible";
 const DEFAULT_MAX_STEPS = "20";
+const DEFAULT_TUI_PART_DISPLAY = "collapsed";
+const DEFAULT_TUI_CONTEXT_SIZE = "32768";
+const PART_DISPLAY_MODES = ["full", "collapsed", "auto-collapsed", "hidden"] as const;
+
+type TerminalPartDisplayMode = typeof PART_DISPLAY_MODES[number];
 
 type SharedAgentCommandOptions = {
   readonly cwd: string;
@@ -19,6 +24,12 @@ type SharedAgentCommandOptions = {
 
 type OneShotAgentCommandOptions = SharedAgentCommandOptions & {
   readonly prompt: string;
+};
+
+type TuiCommandOptions = SharedAgentCommandOptions & {
+  readonly contextSize?: string;
+  readonly toolDisplay: string;
+  readonly reasoningDisplay: string;
 };
 
 const program = new Command();
@@ -41,11 +52,18 @@ addSharedAgentOptions(
   process.stdout.write(`${result.text}\n`);
 });
 
-addSharedAgentOptions(
-  program.command("tui")
-    .description("Open the interactive terminal UI"),
-).action(async (options: SharedAgentCommandOptions) => {
-  await runOpenAICompatibleAiTui(toRuntimeOptions(options));
+addTuiOptions(
+  addSharedAgentOptions(
+    program.command("tui")
+      .description("Open the interactive terminal UI"),
+  ),
+).action(async (options: TuiCommandOptions) => {
+  await runOpenAICompatibleAiTui({
+    ...toRuntimeOptions(options),
+    contextSize: parseOptionalPositiveInteger(options.contextSize, "--context-size"),
+    toolDisplay: parsePartDisplayMode(options.toolDisplay, "--tool-display"),
+    reasoningDisplay: parsePartDisplayMode(options.reasoningDisplay, "--reasoning-display"),
+  });
 });
 
 await program.parseAsync();
@@ -61,6 +79,14 @@ function addSharedAgentOptions(command: Command): Command {
     .option("--auto-approve", "allow write/update/bash tools without approval interruption");
 }
 
+function addTuiOptions(command: Command): Command {
+  const displayModes = PART_DISPLAY_MODES.join("|");
+  return command
+    .option("--context-size <tokens>", "show context usage percentage in the TUI title", DEFAULT_TUI_CONTEXT_SIZE)
+    .option("--tool-display <mode>", `tool display: ${displayModes}`, DEFAULT_TUI_PART_DISPLAY)
+    .option("--reasoning-display <mode>", `reasoning display: ${displayModes}`, DEFAULT_TUI_PART_DISPLAY);
+}
+
 function toRuntimeOptions(options: SharedAgentCommandOptions) {
   return {
     cwd: options.cwd,
@@ -74,10 +100,30 @@ function toRuntimeOptions(options: SharedAgentCommandOptions) {
 }
 
 function parseMaxSteps(value: string): number {
-  const maxSteps = Number.parseInt(value, 10);
-  if (!Number.isInteger(maxSteps) || maxSteps < 1) {
-    throw new Error(`--max-steps must be a positive integer, received: ${value}`);
+  return parsePositiveInteger(value, "--max-steps");
+}
+
+function parseOptionalPositiveInteger(value: string | undefined, optionName: string): number | undefined {
+  return value === undefined ? undefined : parsePositiveInteger(value, optionName);
+}
+
+function parsePositiveInteger(value: string, optionName: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${optionName} must be a positive integer, received: ${value}`);
   }
 
-  return maxSteps;
+  return parsed;
+}
+
+function parsePartDisplayMode(value: string, optionName: string): TerminalPartDisplayMode {
+  if (isPartDisplayMode(value)) {
+    return value;
+  }
+
+  throw new Error(`${optionName} must be one of: ${PART_DISPLAY_MODES.join(", ")}`);
+}
+
+function isPartDisplayMode(value: string): value is TerminalPartDisplayMode {
+  return PART_DISPLAY_MODES.some((mode) => mode === value);
 }

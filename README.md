@@ -127,15 +127,20 @@ npm run cli -- ai \
   --api-key ollama
 ```
 
-Run the terminal UI:
+Run the terminal UI. Tool calls default to compact one-line cards so long tool-heavy sessions do not flood the screen:
 
 ```bash
 npm run tui -- \
   --cwd /path/to/your/project \
   --model qwen2.5-coder:7b \
   --base-url http://localhost:11434/v1 \
-  --api-key ollama
+  --api-key ollama \
+  --context-size 32768 \
+  --tool-display collapsed \
+  --reasoning-display collapsed
 ```
+
+`--context-size` defaults to `32768` and shows context usage in the TUI title so the user can see activity instead of a silent wait. Override it if your model has a different context window.
 
 ## Important Ollama settings
 
@@ -220,14 +225,17 @@ npm run tui -- [options]
 Options:
 
 ```txt
---cwd <path>            Workspace root. Default: current project.
---model <model>         Model name. Default: gpt-4o-mini.
---base-url <url>        OpenAI-compatible API base URL.
---api-key <key>         API key.
---provider-name <name>  Name used in logs.
---max-steps <count>     Maximum model/tool loop steps. Default: 20.
---auto-approve          Do not pause for write/update/bash approvals.
--h, --help              Show help.
+--cwd <path>                 Workspace root. Default: current project.
+--model <model>              Model name. Default: gpt-4o-mini.
+--base-url <url>             OpenAI-compatible API base URL.
+--api-key <key>              API key.
+--provider-name <name>       Name used in logs.
+--max-steps <count>          Maximum model/tool loop steps. Default: 20.
+--context-size <tokens>      Show context usage percentage in the TUI title. Default: 32768.
+--tool-display <mode>        Tool cards: full|collapsed|auto-collapsed|hidden. Default: collapsed.
+--reasoning-display <mode>   Reasoning cards: full|collapsed|auto-collapsed|hidden. Default: collapsed.
+--auto-approve               Do not pause for write/update/bash approvals.
+-h, --help                   Show help.
 ```
 
 ## Safety model

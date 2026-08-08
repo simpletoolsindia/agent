@@ -1,8 +1,10 @@
+import type { Stats } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename } from "node:path";
-import type { Tool, ToolContext } from "../core/tool.js";
-import { LineIndex } from "../core/line-index.js";
 import { sha256, shortHash } from "../core/hash.js";
+import { LineIndex } from "../core/line-index.js";
+import type { Tool, ToolContext } from "../core/tool.js";
+import { ToolError } from "../core/tool.js";
 
 export type ReadInput = {
   readonly path: string;
@@ -39,25 +41,34 @@ export class ReadTool implements Tool<ReadInput, ReadOutput> {
 
   public async execute(input: ReadInput, context: ToolContext): Promise<ReadOutput> {
     const absPath = context.pathPolicy.resolveInside(input.path);
-    const meta = await stat(absPath);
+    const meta = await this.statPath(absPath, input.path);
 
     if (meta.isDirectory()) {
-      const dirents = await readdir(absPath, { withFileTypes: true });
-      const visible = dirents.slice(0, 200);
-      const entries = await Promise.all(visible.map(async (entry) => {
-        const childPath = context.pathPolicy.resolveInside(`${input.path}/${entry.name}`);
-        const childStat = await stat(childPath);
-        return {
-          name: entry.name,
-          kind: entry.isDirectory() ? "directory" as const : "file" as const,
-          size: childStat.size,
-        };
-      }));
-
-      context.logger.info("directory.read", { path: input.path, returned: entries.length, total: dirents.length });
-      return { path: input.path, kind: "directory", entries, truncated: dirents.length > entries.length };
+      return this.readDirectory(input.path, absPath, context);
     }
 
+    return this.readFile(input, absPath, context);
+  }
+
+  private async readDirectory(inputPath: string, absPath: string, context: ToolContext): Promise<ReadOutput> {
+    const dirents = await readdir(absPath, { withFileTypes: true });
+    const visible = dirents.slice(0, 200);
+    const entries = await Promise.all(visible.map(async (entry) => {
+      const childInputPath = `${inputPath}/${entry.name}`;
+      const childPath = context.pathPolicy.resolveInside(childInputPath);
+      const childStat = await this.statPath(childPath, childInputPath);
+      return {
+        name: entry.name,
+        kind: entry.isDirectory() ? "directory" as const : "file" as const,
+        size: childStat.size,
+      };
+    }));
+
+    context.logger.info("directory.read", { path: inputPath, returned: entries.length, total: dirents.length });
+    return { path: inputPath, kind: "directory", entries, truncated: dirents.length > entries.length };
+  }
+
+  private async readFile(input: ReadInput, absPath: string, context: ToolContext): Promise<ReadOutput> {
     const content = await readFile(absPath, "utf8");
     const index = new LineIndex(content);
     const fileHash = sha256(content);
@@ -87,4 +98,22 @@ export class ReadTool implements Tool<ReadInput, ReadOutput> {
       truncated: endLine < index.lineCount(),
     };
   }
+
+  private async statPath(absPath: string, inputPath: string): Promise<Stats> {
+    try {
+      return await stat(absPath);
+    } catch (error) {
+      if (isErrnoCode(error, "ENOENT")) {
+        throw new ToolError("Path does not exist; search or list the parent directory before reading", "PATH_NOT_FOUND", {
+          path: inputPath,
+        });
+      }
+
+      throw error;
+    }
+  }
+}
+
+function isErrnoCode(error: unknown, code: string): boolean {
+  return error instanceof Error && (error as NodeJS.ErrnoException).code === code;
 }

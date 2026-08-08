@@ -29,6 +29,14 @@ function record(name: string, expected: "success" | "failure", result: ToolResul
   };
 }
 
+function recordFailureCode(name: string, expectedCode: string, result: ToolResult<unknown>): CaseResult {
+  const base = record(name, "failure", result);
+  return {
+    ...base,
+    passed: !result.ok && result.code === expectedCode,
+  };
+}
+
 function mustOutput<O>(result: ToolResult<O>): O {
   if (result.ok) {
     return result.output;
@@ -124,6 +132,14 @@ async function main(): Promise<void> {
   results.push(record("bash runs argv command", "success", await registry.run<BashOutput>("bash", {
     command: process.execPath,
     args: ["-e", "console.log('ok')"],
+  }, context)));
+
+  results.push(recordFailureCode("read missing path is actionable", "PATH_NOT_FOUND", await registry.run("read", {
+    path: "batch-tool.ts",
+  }, context)));
+
+  results.push(recordFailureCode("bash missing executable is actionable", "BASH_SPAWN_FAILED", await registry.run("bash", {
+    command: "definitely-not-a-real-command",
   }, context)));
 
   results.push(record("schema rejects missing path", "failure", await registry.run("read", {
