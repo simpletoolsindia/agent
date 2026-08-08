@@ -1,0 +1,28 @@
+{
+  "name": "harness-tools-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "benchmark": "node dist/benchmarks/bench.js",
+    "correctness": "node dist/benchmarks/correctness.js",
+    "cli": "node dist/src/cli/main.js",
+    "tui": "node dist/src/cli/main.js tui"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.36",
+    "@ai-sdk/tui": "^1.0.59",
+    "@vscode/ripgrep": "latest",
+    "ai": "^7.0.58",
+    "ajv": "latest",
+    "commander": "^15.0.0",
+    "execa": "latest",
+    "write-file-atomic": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/write-file-atomic": "latest",
+    "typescript": "latest"
+  }
+}
