@@ -123,22 +123,40 @@ async function main(): Promise<void> {
     }],
   }, context)));
 
+  results.push(recordFailureCode("read rejects invalid line range", "READ_RANGE_INVALID", await registry.run("read", {
+    path: "src/example.ts",
+    startLine: 99,
+    limitLines: 1,
+  }, context)));
+
+  results.push(recordFailureCode("update rejects invalid line range", "UPDATE_RANGE_INVALID", await registry.run("update", {
+    path: "src/example.ts",
+    fileHash: mismatchRead.fileHash,
+    operations: [{
+      kind: "replace",
+      startLine: 99,
+      endLine: 100,
+      expectedHash: mismatchRead.rangeHash,
+      content: "export const value = 7;\n",
+    }],
+  }, context)));
+
   results.push(record("search finds exact text", "success", await registry.run<SearchOutput>("search", {
     query: "value = 4",
     path: "src",
     maxMatches: 10,
+    literal: true,
   }, context)));
 
-  results.push(record("bash runs argv command", "success", await registry.run<BashOutput>("bash", {
-    command: process.execPath,
-    args: ["-e", "console.log('ok')"],
+  results.push(record("bash runs shell command", "success", await registry.run<BashOutput>("bash", {
+    command: `${JSON.stringify(process.execPath)} -e "console.log('ok')"`,
   }, context)));
 
   results.push(recordFailureCode("read missing path is actionable", "PATH_NOT_FOUND", await registry.run("read", {
     path: "batch-tool.ts",
   }, context)));
 
-  results.push(recordFailureCode("bash missing executable is actionable", "BASH_SPAWN_FAILED", await registry.run("bash", {
+  results.push(record("bash reports command-not-found exit", "success", await registry.run("bash", {
     command: "definitely-not-a-real-command",
   }, context)));
 

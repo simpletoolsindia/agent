@@ -145,8 +145,7 @@ async function main(): Promise<void> {
   const searchOutput = ensureOk(searchResult);
 
   const bashResult = await registry.run<BashOutput>("bash", {
-    command: process.execPath,
-    args: ["-e", "console.log(21 * 2)"],
+    command: `${JSON.stringify(process.execPath)} -e "console.log(21 * 2)"`,
     timeoutMs: 5000,
   }, context);
   const bashOutput = ensureOk(bashResult);

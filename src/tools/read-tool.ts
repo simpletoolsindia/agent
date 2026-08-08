@@ -24,6 +24,7 @@ export type ReadOutput = {
   readonly content?: string;
   readonly entries?: Array<{ readonly name: string; readonly kind: "file" | "directory"; readonly size: number }>;
   readonly truncated: boolean;
+  readonly nextStartLine?: number;
 };
 
 export class ReadTool implements Tool<ReadInput, ReadOutput> {
@@ -72,17 +73,29 @@ export class ReadTool implements Tool<ReadInput, ReadOutput> {
     const content = await readFile(absPath, "utf8");
     const index = new LineIndex(content);
     const fileHash = sha256(content);
+    const lineCount = index.lineCount();
     const startLine = input.startLine ?? 1;
     const limitLines = input.limitLines ?? 120;
-    const endLine = Math.min(index.lineCount(), startLine + limitLines - 1);
-    const range = index.lineCount() === 0
+
+    if (lineCount > 0 && startLine > lineCount) {
+      throw new ToolError("Read startLine is beyond the end of the file", "READ_RANGE_INVALID", {
+        path: input.path,
+        startLine,
+        lineCount,
+      });
+    }
+
+    const endLine = lineCount === 0 ? 1 : Math.min(lineCount, startLine + limitLines - 1);
+    const range = lineCount === 0
       ? { text: "", hash: sha256(""), startLine: 1, endLine: 1 }
       : index.range(startLine, endLine);
+    const truncated = lineCount > 0 && endLine < lineCount;
 
     context.logger.info("file.read", {
       name: basename(absPath),
-      lineCount: index.lineCount(),
-      returnedLines: endLine >= startLine ? endLine - startLine + 1 : 0,
+      lineCount,
+      returnedLines: lineCount === 0 ? 0 : endLine - startLine + 1,
+      truncated,
     });
 
     return {
@@ -93,9 +106,10 @@ export class ReadTool implements Tool<ReadInput, ReadOutput> {
       rangeHash: range.hash,
       startLine,
       endLine,
-      lineCount: index.lineCount(),
+      lineCount,
       content: range.text,
-      truncated: endLine < index.lineCount(),
+      truncated,
+      ...(truncated ? { nextStartLine: endLine + 1 } : {}),
     };
   }
 

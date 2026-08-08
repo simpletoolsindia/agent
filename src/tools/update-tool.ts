@@ -71,25 +71,13 @@ export class UpdateTool implements Tool<UpdateInput, UpdateOutput> {
       });
     }
 
+    const index = new LineIndex(current.content);
     const sorted = [...input.operations].sort((left, right) => right.startLine - left.startLine);
     this.assertNoOverlap(sorted);
+    this.assertValidRanges(sorted, index.lineCount(), input.path);
+    this.assertExpectedHashes(sorted, index, input.path);
 
-    let next = current.content;
-    for (const operation of sorted) {
-      const index = new LineIndex(next);
-      const existing = index.range(operation.startLine, operation.endLine);
-      if (existing.hash !== operation.expectedHash) {
-        throw new ToolError("Range hash mismatch; refusing unsafe edit", "UPDATE_RANGE_CHANGED", {
-          path: input.path,
-          startLine: operation.startLine,
-          endLine: operation.endLine,
-          expected: shortHash(operation.expectedHash),
-          actual: shortHash(existing.hash),
-        });
-      }
-      next = index.replace(operation.startLine, operation.endLine, operation.content);
-    }
-
+    const next = applyReplacements(current.content, sorted);
     const durability = input.durability ?? "safe";
     const written = await this.files.writeTextAtomic(absPath, next, durability);
     context.logger.info("file.update", { path: input.path, applied: input.operations.length, durability });
@@ -114,4 +102,47 @@ export class UpdateTool implements Tool<UpdateInput, UpdateOutput> {
       }
     }
   }
+
+  private assertValidRanges(operations: readonly ReplaceOperation[], lineCount: number, path: string): void {
+    for (const operation of operations) {
+      if (operation.startLine < 1 || operation.endLine < operation.startLine || operation.endLine > lineCount) {
+        throw new ToolError("Update range is outside the current file", "UPDATE_RANGE_INVALID", {
+          path,
+          startLine: operation.startLine,
+          endLine: operation.endLine,
+          lineCount,
+        });
+      }
+    }
+  }
+
+  private assertExpectedHashes(operations: readonly ReplaceOperation[], index: LineIndex, path: string): void {
+    for (const operation of operations) {
+      const existing = index.range(operation.startLine, operation.endLine);
+      if (existing.hash !== operation.expectedHash) {
+        throw new ToolError("Range hash mismatch; refusing unsafe edit", "UPDATE_RANGE_CHANGED", {
+          path,
+          startLine: operation.startLine,
+          endLine: operation.endLine,
+          expected: shortHash(operation.expectedHash),
+          actual: shortHash(existing.hash),
+        });
+      }
+    }
+  }
+}
+
+function applyReplacements(content: string, operations: readonly ReplaceOperation[]): string {
+  const lines = content.split(/(?<=\n)/u);
+  const chunks: string[] = [];
+  let cursor = lines.length;
+
+  for (const operation of operations) {
+    chunks.push(lines.slice(operation.endLine, cursor).join(""));
+    chunks.push(operation.content);
+    cursor = operation.startLine - 1;
+  }
+
+  chunks.push(lines.slice(0, cursor).join(""));
+  return chunks.reverse().join("");
 }

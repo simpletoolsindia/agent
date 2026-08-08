@@ -19,6 +19,8 @@ It can run with Ollama through Ollama's OpenAI-compatible API.
 - Local Ollama support: `--base-url http://localhost:11434/v1 --api-key ollama`
 - Safer edits: `update` refuses stale file hashes and wrong line ranges
 - Benchmarks and correctness checks
+- Shared CLI/TUI agent loop with step logging, stable tool ordering, failure recovery hints, and context compaction
+- Shell-string `bash` commands, so prompts can ask for `npm run build` directly
 
 ## Requirements
 
@@ -290,6 +292,23 @@ Options:
 5. non-overlapping edit ranges.
 
 If the file changed after the model read it, the edit is rejected.
+
+## Agent loop
+
+CLI and TUI use the same `ToolLoopAgent` setup:
+
+- stable tool order: `search`, `read`, `update`, `write`, `bash`
+- step logs with finish reason, tool names, token usage, and elapsed time
+- targeted recovery hints after failed tool results
+- automatic context compaction for long sessions
+
+`bash` accepts one shell command string and runs it in the selected workspace:
+
+```json
+{ "command": "npm run build", "cwd": ".", "timeoutMs": 120000 }
+```
+
+The command output includes `exitCode`, `stdout`, `stderr`, byte counts, and a `truncated` flag. Non-zero command exits are returned as command results so the agent can inspect and fix them.
 
 ## Development commands
 
