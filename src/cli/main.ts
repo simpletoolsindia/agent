@@ -5,6 +5,7 @@ import { runOpenAICompatibleAi } from "../ai/openai-compatible-ai.js";
 import { runOpenAICompatibleAiTui } from "../tui/ai-tui.js";
 import { renderActivityPulse, renderCliPanel, renderCliSplash, renderProgressSteps } from "../tui/status-bar.js";
 import { formatSessionList, listSessions } from "../tui/session-store.js";
+import { createDoctorReport } from "./doctor.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const DEFAULT_PROVIDER_NAME = "openai-compatible";
@@ -50,6 +51,10 @@ type TuiCommandOptions = SharedAgentCommandOptions & {
   readonly sessionId?: string;
 };
 
+type DoctorCommandOptions = SharedAgentCommandOptions & {
+  readonly binName?: string;
+  readonly binDir?: string;
+};
 const UI_DENSITY_PRESETS: Record<UiDensity, {
   readonly toolDisplay: TerminalPartDisplayMode;
   readonly reasoningDisplay: TerminalPartDisplayMode;
@@ -70,62 +75,96 @@ const UI_DENSITY_PRESETS: Record<UiDensity, {
 
 const program = new Command();
 
-program
-  .name("harness")
-  .description("Five-tool coding harness prototype")
-  .version("0.1.0");
-
-addSharedAgentOptions(
-  program.command("ai")
-    .description("Run one OpenAI-compatible LLM request")
-    .requiredOption("-p, --prompt <prompt>", "user prompt to send to the AI"),
-).action(async (options: OneShotAgentCommandOptions) => {
-  const runtimeOptions = toRuntimeOptions(options);
-  if (process.stdout.isTTY) {
-    process.stdout.write(`${renderCliSplash(runtimeOptions.model, runtimeOptions.cwd, runtimeOptions.approvalMode, process.stdout.columns ?? 88)}\n\n`);
-  }
-
-  const result = await runWithCliAnimation(process.stdout.isTTY === true, async () => await runOpenAICompatibleAi({
-    ...runtimeOptions,
-    prompt: options.prompt,
-  }));
-
-  process.stdout.write(`${result.text}\n`);
-  if (process.stdout.isTTY) {
-    process.stdout.write(`\n${renderCliPanel("Run complete · OMP-style flow", [
-      renderProgressSteps(["prompt", "think", "tools", "answer"], 3, process.stdout.columns ?? 88),
-      "Agent response finished. Use `harness tui` for approvals, live tools, and animated progress.",
-      "Next shortcuts: `--auto-approve`, `--agent-md AGENT.md`, `--skills-md SKILLS.md`.",
-    ], process.stdout.columns ?? 88)}\n`);
-  }
-});
-
-program.command("sessions")
-  .description("List the five saved resumable TUI sessions")
-  .action(async () => {
-    process.stdout.write(`${formatSessionList(await listSessions())}\n`);
-  });
-
-addTuiOptions(
-  addSharedAgentOptions(
-    program.command("tui")
-      .description("Open the interactive terminal UI with /settings, /compact, and /agents commands"),
-  ),
-).action(async (options: TuiCommandOptions) => {
-  const display = resolveTuiDisplay(options);
-  await runOpenAICompatibleAiTui({
-    ...toRuntimeOptions(options),
-    contextSize: parseOptionalPositiveInteger(options.contextSize, "--context-size"),
-    toolDisplay: display.toolDisplay,
-    reasoningDisplay: display.reasoningDisplay,
-    providerSetupMode: options.setup === false ? "never" : options.setup === true ? "always" : "auto",
-    resumeSession: options.resume !== false,
-    resumeSessionId: typeof options.resume === "string" ? options.resume : undefined,
-    sessionId: options.sessionId,
-  });
-});
+configureProgram(program);
+registerAiCommand(program);
+registerSessionsCommand(program);
+registerDoctorCommand(program);
+registerTuiCommand(program);
 
 await program.parseAsync();
+
+function configureProgram(command: Command): void {
+  command
+    .name("harness")
+    .description("Five-tool coding harness prototype")
+    .version("0.1.0");
+}
+
+function registerAiCommand(command: Command): void {
+  addSharedAgentOptions(
+    command.command("ai")
+      .description("Run one OpenAI-compatible LLM request")
+      .requiredOption("-p, --prompt <prompt>", "user prompt to send to the AI"),
+  ).action(async (options: OneShotAgentCommandOptions) => {
+    const runtimeOptions = toRuntimeOptions(options);
+    if (process.stdout.isTTY) {
+      process.stdout.write(`${renderCliSplash(runtimeOptions.model, runtimeOptions.cwd, runtimeOptions.approvalMode, process.stdout.columns ?? 88)}\n\n`);
+    }
+
+    const result = await runWithCliAnimation(process.stdout.isTTY === true, async () => await runOpenAICompatibleAi({
+      ...runtimeOptions,
+      prompt: options.prompt,
+    }));
+
+    process.stdout.write(`${result.text}\n`);
+    if (process.stdout.isTTY) {
+      process.stdout.write(`\n${renderCliPanel("Run complete · OMP-style flow", [
+        renderProgressSteps(["prompt", "think", "tools", "answer"], 3, process.stdout.columns ?? 88),
+        "Agent response finished. Use `harness tui` for approvals, live tools, and animated progress.",
+        "Next shortcuts: `--auto-approve`, `--agent-md AGENT.md`, `--skills-md SKILLS.md`.",
+      ], process.stdout.columns ?? 88)}\n`);
+    }
+  });
+}
+
+function registerSessionsCommand(command: Command): void {
+  command.command("sessions")
+    .description("List the five saved resumable TUI sessions")
+    .action(async () => {
+      process.stdout.write(`${formatSessionList(await listSessions())}\n`);
+    });
+}
+
+function registerDoctorCommand(command: Command): void {
+  addDoctorOptions(
+    addSharedAgentOptions(
+      command.command("doctor")
+        .description("Check local install, PATH, build, workspace, and provider setup"),
+    ),
+  ).action(async (options: DoctorCommandOptions) => {
+    const runtimeOptions = toRuntimeOptions(options);
+    process.stdout.write(`${await createDoctorReport({
+      cwd: runtimeOptions.cwd,
+      model: runtimeOptions.model,
+      baseURL: runtimeOptions.baseURL,
+      apiKey: runtimeOptions.apiKey,
+      binName: options.binName,
+      installBinDir: options.binDir,
+      cliPath: process.argv[1],
+    })}\n`);
+  });
+}
+
+function registerTuiCommand(command: Command): void {
+  addTuiOptions(
+    addSharedAgentOptions(
+      command.command("tui")
+        .description("Open the interactive terminal UI with /settings, /compact, and /agents commands"),
+    ),
+  ).action(async (options: TuiCommandOptions) => {
+    const display = resolveTuiDisplay(options);
+    await runOpenAICompatibleAiTui({
+      ...toRuntimeOptions(options),
+      contextSize: parseOptionalPositiveInteger(options.contextSize, "--context-size"),
+      toolDisplay: display.toolDisplay,
+      reasoningDisplay: display.reasoningDisplay,
+      providerSetupMode: options.setup === false ? "never" : options.setup === true ? "always" : "auto",
+      resumeSession: options.resume !== false,
+      resumeSessionId: typeof options.resume === "string" ? options.resume : undefined,
+      sessionId: options.sessionId,
+    });
+  });
+}
 
 function addSharedAgentOptions(command: Command): Command {
   return command
@@ -152,6 +191,12 @@ function addTuiOptions(command: Command): Command {
     .option("--resume [id]", "resume the latest saved session or a specific session id", true)
     .option("--no-resume", "start without loading a saved session")
     .option("--session-id <id>", "stable id to use when saving this TUI session");
+}
+
+function addDoctorOptions(command: Command): Command {
+  return command
+    .option("--bin-name <name>", "installed command name", process.env.HARNESS_BIN_NAME ?? "harness")
+    .option("--bin-dir <path>", "install directory to check", process.env.HARNESS_INSTALL_BIN_DIR ?? `${process.env.HOME ?? ""}/.local/bin`);
 }
 
 function toRuntimeOptions(options: SharedAgentCommandOptions) {

@@ -14,14 +14,16 @@ It can run with Ollama through Ollama's OpenAI-compatible API.
 
 ## What you get
 
-- One-shot CLI agent: `harness ai ...` after `./install.sh`, or `npm run cli -- ai ...` inside the clone
+- One-command local install from a clone: `./install.sh`
+- Setup diagnostics: `harness doctor` checks build output, PATH, command link, workspace, and provider config
+- One-shot CLI agent: `harness ai ...` after install, or `npm run cli -- ai ...` inside the clone
 - Interactive terminal UI: `harness tui --setup` after install, or `npm run tui -- ...` inside the clone
 - Local Ollama setup shortcut in TUI: `/settings ollama`
 - Local Ollama support: `--base-url http://localhost:11434/v1 --api-key ollama`
 - Safer edits: `update` refuses stale file hashes and wrong line ranges
 - Benchmarks and correctness checks
 - Shared CLI/TUI agent loop with step logging, stable tool ordering, failure recovery hints, context compaction, and a higher safety step limit for long tasks
-- Shell-string `bash` commands, so prompts can ask for `npm run build` directly
+- Internal code map: `docs/ARCHITECTURE.md`
 
 ## Requirements
 
@@ -39,12 +41,13 @@ node --version
 npm --version
 ```
 
-## Install Agent
+## Fast install and setup
 
-Run this from an already cloned repository:
+Clone, install, and run the setup doctor:
 
 ```bash
-cd /path/to/agent
+git clone https://github.com/simpletoolsindia/agent.git
+cd agent
 ./install.sh
 ```
 
@@ -53,10 +56,19 @@ The installer:
 1. checks for Node.js 20+ and npm,
 2. installs dependencies with `npm ci` when `package-lock.json` exists,
 3. builds TypeScript,
-4. smoke-checks the CLI help output,
-5. links `harness` into `${HOME}/.local/bin` by default.
+4. smoke-checks CLI help output,
+5. links `harness` into `${HOME}/.local/bin` by default,
+6. runs `harness doctor` so missing PATH/provider steps are visible immediately.
 
-Add the install directory to your shell profile if needed:
+Start here after install:
+
+```bash
+harness doctor
+harness tui --setup
+harness ai --prompt "Read package.json and explain the scripts"
+```
+
+Add the install directory to your shell profile if `harness` is not found:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -67,6 +79,7 @@ Manual equivalent without linking:
 ```bash
 npm ci
 npm run build
+npm run cli -- doctor
 npm run cli -- --help
 ```
 
@@ -77,9 +90,11 @@ Version and uninstall:
 ./uninstall.sh
 ```
 
-Custom install location:
+Custom install location or command name:
 
 ```bash
+./install.sh --bin-dir /usr/local/bin
+./install.sh --bin-name agent
 HARNESS_INSTALL_BIN_DIR=/usr/local/bin ./install.sh
 ```
 
@@ -130,10 +145,10 @@ Use the same model name in `--model`.
 
 ## Quick start with Ollama
 
-Run one request:
+Run one request after `./install.sh`:
 
 ```bash
-npm run cli -- ai \
+harness ai \
   --prompt "Read package.json and explain the scripts" \
   --model qwen2.5-coder:7b \
   --base-url http://localhost:11434/v1 \
@@ -143,7 +158,7 @@ npm run cli -- ai \
 Run against another project:
 
 ```bash
-npm run cli -- ai \
+harness ai \
   --cwd /path/to/your/project \
   --prompt "Search for TODO comments and summarize them" \
   --model qwen2.5-coder:7b \
@@ -154,13 +169,15 @@ npm run cli -- ai \
 Run the terminal UI. The default UI density is `compact`, so tool-heavy sessions stay readable while the interface stays rich and animated:
 
 ```bash
-npm run tui -- \
+harness tui \
   --cwd /path/to/your/project \
   --model qwen2.5-coder:7b \
   --base-url http://localhost:11434/v1 \
   --api-key ollama \
   --ui-density compact
 ```
+
+Inside an uninstalled clone, prefix commands with `npm run cli --`, for example `npm run cli -- ai --prompt "..."`.
 
 The one-shot CLI now follows the Oh My Pi cockpit style: rounded panels, segmented metric strips, stage timelines, shimmer text, and animated `AI running` status. The TUI opens an OMP-inspired setup cockpit when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, approval mode, `agent.md`, and `skills.md` before the chat starts. The setup screen groups connection and workspace fields, shows active profile chips, docs count, keyboard shortcuts, a live spinner, and bounded status/progress rows for narrow terminals. During model/tool work the chat UI shows rounded message cards, `You` / `Assistant · reply` / `Thinking` labels, streamed reasoning, inline tool progress, `bash` command status, parallel tool counts, scroll hints, stage timelines, shimmering active labels, and gradient progress bars adapted from `vraj00222/tui`'s `ProgressBar` pattern. Rotating suggestions call out when to use `search`, `read`, `update`, `write`, `bash`, `/settings`, `/agents`, `/sessions`, and `/compact`. The title uses a compact status-line style with workspace, model, approval mode, context usage, and slash-command hints. `--context-size` defaults to `32768`.
 
@@ -358,6 +375,21 @@ Options:
 -h, --help                   Show help.
 ```
 
+### Setup doctor
+
+```bash
+npm run cli -- doctor [options]
+```
+
+`doctor` is read-only. It checks the current workspace, built CLI file, shell PATH, install symlink, model name, and provider key/endpoint hints.
+
+Extra options:
+
+```txt
+--bin-name <name>  Installed command name to check. Default: harness.
+--bin-dir <path>   Install directory to check. Default: ~/.local/bin.
+```
+
 Useful TUI slash commands:
 
 ```txt
@@ -408,6 +440,7 @@ CLI and TUI use the same `ToolLoopAgent` setup:
 - independent `subagent`, `search`, `read`, and `bash` calls are issued in the same model step when possible so the AI SDK executes them in parallel; `write` and `update` stay serialized when they touch the same file
 - the TUI renderer patch makes upstream `@ai-sdk/tui` look closer to Oh My Pi: rounded viewport chrome, renamed chat sections, richer code fences, scrollbar, shimmer-ready progress footer, and a `vraj00222/tui`-style gradient progress bar
 - `write` and `update` return compact diff summaries plus best-effort LSP diagnostics for edited files
+- maintainer documentation, code reading order, and internal data-flow diagrams live in `docs/ARCHITECTURE.md`
 
 `bash` accepts one shell command string and runs it in the selected workspace:
 
@@ -422,6 +455,7 @@ The command output includes `exitCode`, `stdout`, `stderr`, byte counts, and a `
 ```bash
 npm run build
 npm run cli -- --help
+npm run cli -- doctor
 npm run correctness
 npm run benchmark
 ```

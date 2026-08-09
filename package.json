@@ -12,6 +12,8 @@
     "correctness": "node dist/benchmarks/correctness.js",
     "cli": "node dist/src/cli/main.js",
     "tui": "node dist/src/cli/main.js tui",
+    "doctor": "node dist/src/cli/main.js doctor",
+    "setup": "./install.sh",
     "install:local": "./install.sh",
     "uninstall:local": "./uninstall.sh",
     "version:local": "./version.sh"

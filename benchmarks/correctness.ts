@@ -8,6 +8,7 @@ import { reduceProviderSetupInput, renderProviderSetupScreen, resolveProviderSet
 import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
 import { renderActivityPulse, renderCliSplash, renderMetricStrip, renderProgressBar, renderProgressSteps, renderShimmerText, renderStatusBar, visibleLength } from "../src/tui/status-bar.js";
+import { createDoctorReport } from "../src/cli/doctor.js";
 
 const workspace = join(process.cwd(), ".correctness-workspace");
 
@@ -261,6 +262,25 @@ async function main(): Promise<void> {
       && contextInstructions.includes("Keep modules cohesive")
       && contextInstructions.includes("Additional context from skills.md")
       && contextInstructions.includes("Use focused validation"),
+  ));
+
+  const doctorReport = await createDoctorReport({
+    cwd: workspace,
+    model: "qwen2.5-coder:7b",
+    baseURL: "http://localhost:11434/v1",
+    apiKey: "ollama",
+    binName: "harness",
+    installBinDir: workspace,
+    cliPath: process.argv[1],
+    envPath: workspace,
+  });
+  results.push(recordCheck(
+    "doctor report explains setup state",
+    doctorReport.includes("Harness setup doctor")
+      && doctorReport.includes("Workspace:")
+      && doctorReport.includes("Model provider")
+      && doctorReport.includes("Next start commands")
+      && doctorReport.includes("harness tui --setup"),
   ));
 
   const setupOptions = resolveProviderSetupOptions({ cwd: workspace, model: "gpt-4o-mini", baseURL: undefined, apiKey: "old", approvalMode: undefined, agentMdPath: undefined, skillsMdPath: undefined }, {
