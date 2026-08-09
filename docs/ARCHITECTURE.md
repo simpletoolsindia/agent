@@ -127,7 +127,7 @@ This keeps command parsing independent from model/tool behavior.
 6. `createSlashCommandAgent` wraps the shared coding agent with local slash-command handling.
 7. `runFullscreen` enters alternate screen mode.
 8. `runAgentTUI` renders messages, tool cards, reasoning, progress, approvals, and response statistics.
-9. `session-store.ts` persists the five newest sessions in `~/.harness-tools/sessions.json`.
+9. `session-store.ts` persists the five newest sessions in `~/.harness-tools/sessions.json`; `/session` shows a numbered picker, `/session <id|number>` swaps the loaded message prefix, and `/session name <name>` changes the save key for future turns.
 
 ## Visible todo helper
 

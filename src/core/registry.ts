@@ -43,9 +43,9 @@ export class ToolRegistry {
     }
 
     const logger = context.logger.child(name);
-    logger.info("tool.start", { inputKeys: Object.keys(input as Record<string, unknown>) });
 
     try {
+      logger.info("tool.start", { inputKeys: inputKeys(input) });
       this.validator.validate(name, tool.schema, input);
       const output = await tool.execute(input, { ...context, logger });
       const elapsedMs = performance.now() - started;
@@ -67,4 +67,8 @@ export class ToolRegistry {
       };
     }
   }
+}
+
+function inputKeys(input: unknown): readonly string[] {
+  return typeof input === "object" && input !== null ? Object.keys(input) : [];
 }

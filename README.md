@@ -259,6 +259,9 @@ TUI slash commands run locally and do not spend an LLM call:
 | `/settings ...` | Any settings update also rewrites `~/.harness-tools/model.json` for the next run. |
 | `/compact` | Drop slash-command chatter and prune older tool-heavy history for future turns. |
 | `/agents` | Show the built-in read-only subagent roles and simplified task payload format. |
+| `/session` | Show saved resumable sessions as a numbered picker with switch/name examples. |
+| `/session <id\|number>` | Switch the current TUI to a saved session before the next prompt. |
+| `/session name <name>` | Rename this conversation so it is easy to find later. Spaces become `-`. |
 
 Long model starts show a lightweight processing indicator before streaming begins.
 

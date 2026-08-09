@@ -13,7 +13,7 @@ import {
 } from "../ai/coding-agent.js";
 import { resolveContextSize } from "../ai/openai-compatible-runtime.js";
 import { renderActivityPulse, renderCliPanel, renderKeyValueDeck, renderMetricStrip, renderProgressSteps, renderStatusBar } from "./status-bar.js";
-import { formatSessionList, listSessions, loadSession, saveSession } from "./session-store.js";
+import { listSessions, loadSession, saveSession, type HarnessSession } from "./session-store.js";
 import { saveModelConfig } from "./model-config.js";
 
 const SETTINGS_KEYS = ["model", "context-size", "base-url", "api-key", "provider-name", "approval", "agent-md", "skills-md"] as const;
@@ -58,7 +58,7 @@ class SlashCommandAgent {
   private compactRuns = 0;
   private readonly resumeSession: boolean;
   private readonly resumeSessionId: string | undefined;
-  private readonly sessionId: string | undefined;
+  private currentSessionId: string | undefined;
   private sessionPrefix: readonly ModelMessage[] = [];
   private readonly modelConfigPath: string | undefined;
   private sessionLoaded = false;
@@ -69,7 +69,7 @@ class SlashCommandAgent {
     this.modelConfigPath = modelConfigPath;
     this.resumeSession = resumeSession !== false;
     this.resumeSessionId = resumeSessionId;
-    this.sessionId = sessionId;
+    this.currentSessionId = sessionId;
     this.current = createOpenAICompatibleCodingAgent(this.optionsWithTuiLogger());
   }
 
@@ -121,15 +121,7 @@ class SlashCommandAgent {
       return { ...options, prompt: messages } as T;
     }
 
-    const filtered = removeSlashCommandMessages(messages);
-    const recent = filtered.slice(-COMPACT_KEEP_MESSAGES);
-    const compacted = pruneMessages({
-      messages: recent,
-      reasoning: "all",
-      toolCalls: "before-last-5-messages",
-      emptyMessages: "remove",
-    });
-
+    const compacted = safePruneSlashMessages(messages);
     return {
       ...options,
       prompt: compacted,
@@ -145,15 +137,15 @@ class SlashCommandAgent {
       case "agents":
         return { text: agentsHelpText() };
       case "sessions":
-        return { text: formatSessionList(await listSessions()) };
+        return await this.applySessionCommand(command.args);
       case "compact":
         this.compactNextPrompts = true;
         this.compactRuns += 1;
         return {
           text: [
             "## Context compacted",
-            "Future model calls will drop slash-command chatter and keep the latest high-signal turns/tool results.",
-            "Use `/settings show` to inspect the active model settings.",
+            `Next ${this.compactNextPrompts ? "prompt" : "run"} will keep the most recent ${COMPACT_KEEP_MESSAGES} messages and summarize older context before sending it to the model.`,
+            formatSettings(this.settings, this.compactNextPrompts, this.compactRuns),
           ].join("\n\n"),
         };
     }
@@ -179,6 +171,7 @@ class SlashCommandAgent {
     if (session === undefined || session.messages.length === 0) {
       return;
     }
+    this.currentSessionId = session.id;
     this.sessionPrefix = session.messages;
   }
 
@@ -190,18 +183,76 @@ class SlashCommandAgent {
       ? baseMessages
       : [...baseMessages, { role: "assistant" as const, content: assistantText }];
     await saveSession({
-      id: this.sessionId,
+      id: this.currentSessionId,
       cwd: this.settings.cwd,
       model: this.settings.model,
       messages,
     });
   }
 
-  private async applySettingsCommand(args: readonly string[]): Promise<CommandResult> {
-    if (args.length === 0 || args[0] === "show" || args[0] === "menu") {
-      return { text: formatSettings(this.settings, this.compactNextPrompts, this.compactRuns) };
+  private async applySessionCommand(args: readonly string[]): Promise<CommandResult> {
+    const action = args[0]?.toLowerCase();
+    if (action === "name" || action === "rename") {
+      return await this.renameCurrentSession(args.slice(1));
     }
-    if (args[0] === "help") {
+    if (action === undefined || action === "list" || action === "show") {
+      return { text: formatSessionPicker(await listSessions(), this.currentSessionId) };
+    }
+
+    const session = await resolveSessionSelection(args[0] ?? "", this.settings.cwd);
+    if (session === undefined) {
+      return {
+        text: [
+          `Session not found: ${args[0] ?? ""}`,
+          "",
+          formatSessionPicker(await listSessions(), this.currentSessionId),
+        ].join("\n"),
+      };
+    }
+
+    this.currentSessionId = session.id;
+    this.sessionPrefix = session.messages;
+    this.sessionLoaded = true;
+    return {
+      text: [
+        `## Session switched: ${session.id}`,
+        "",
+        `${session.messages.length} messages loaded. The next prompt continues this session.`,
+        "",
+        formatSessionPicker(await listSessions(), this.currentSessionId),
+      ].join("\n"),
+    };
+  }
+
+  private async renameCurrentSession(args: readonly string[]): Promise<CommandResult> {
+    const name = normalizeSessionName(args.join(" "));
+    if (name === undefined) {
+      return { text: "Use `/session name <name>` to name the current conversation." };
+    }
+
+    this.currentSessionId = name;
+    if (this.sessionPrefix.length > 0) {
+      await saveSession({
+        id: this.currentSessionId,
+        cwd: this.settings.cwd,
+        model: this.settings.model,
+        messages: this.sessionPrefix,
+      });
+    }
+
+    return {
+      text: [
+        `## Session named: ${name}`,
+        "",
+        "Future turns in this TUI will save under this name.",
+        "",
+        formatSessionPicker(await listSessions(), this.currentSessionId),
+      ].join("\n"),
+    };
+  }
+
+  private async applySettingsCommand(args: readonly string[]): Promise<CommandResult> {
+    if (args[0] === "menu") {
       return { text: settingsHelpText() };
     }
     if (args[0] === "auto" || args[0] === "auto-approve" || args[0] === "safe") {
@@ -345,6 +396,7 @@ function parseSlashCommand(prompt: string): SlashCommand | undefined {
     case "subagents":
       return { name: "agents", args };
     case "sessions":
+    case "session":
     case "resume":
       return { name: "sessions", args };
     default:
@@ -491,9 +543,9 @@ function slashHelpText(settings: RuntimeSettings, compactEnabled: boolean, compa
       "`/settings menu`  Keyboard-first setup with segmented profile and examples.",
       "`/settings ollama`  Local Ollama in one command.",
       "`/settings auto`  Reduce approval friction in trusted workspaces.",
-      "`/compact`  Prune old slash chatter and tool-heavy history.",
-      "`/sessions`  List the five saved resumable sessions.",
-      "`/agents`  Show read-only subagent delegation modes.",
+      "`/session`  Show saved sessions and selection commands.",
+      "`/session <id|number>`  Switch to a saved session.",
+      "`/session name <name>`  Name this conversation for next time.",
       renderProgressSteps(["configure", "chat", "tools", "verify"], 1, 74),
     ], 78),
     "",
@@ -532,6 +584,45 @@ function agentsHelpText(): string {
     "",
     "Edits still happen in the main agent with normal `update`/`write` approval; subagent output is a compact handoff, not trusted until the main agent validates it. Press `Esc` or `Ctrl+C` during work to interrupt the current stream, abort any active subagent, and open the prompt immediately so the next user message can redirect or queue the next task.",
   ].join("\n");
+}
+
+function formatSessionPicker(sessions: readonly HarnessSession[], activeSessionId: string | undefined): string {
+  if (sessions.length === 0) {
+    return [
+      "## Sessions",
+      "",
+      "No saved sessions yet.",
+      "",
+      "Use `/session name <name>` to name this conversation before your next prompt.",
+    ].join("\n");
+  }
+
+  return [
+    "## Sessions",
+    "",
+    "Type `/session <number>` or `/session <id>` to switch. Type `/session name <name>` to name the current conversation.",
+    "",
+    "| # | Session | Model | Messages | Updated |",
+    "| --- | --- | --- | --- | --- |",
+    ...sessions.map((session, index) => {
+      const active = session.id === activeSessionId ? " (active)" : "";
+      return `| ${index + 1} | ${session.id}${active} | ${session.model} | ${session.messages.length} | ${session.updatedAt} |`;
+    }),
+  ].join("\n");
+}
+
+async function resolveSessionSelection(selection: string, cwd: string): Promise<HarnessSession | undefined> {
+  const sessions = await listSessions();
+  const index = Number.parseInt(selection, 10);
+  if (Number.isInteger(index) && index.toString() === selection && index >= 1) {
+    return sessions[index - 1];
+  }
+  return await loadSession(selection, cwd);
+}
+
+function normalizeSessionName(value: string): string | undefined {
+  const normalized = value.trim().replace(/\s+/g, "-").replace(/[^A-Za-z0-9_.-]+/g, "").slice(0, 64);
+  return normalized.length === 0 ? undefined : normalized;
 }
 
 function extractPromptText(options: { readonly prompt?: unknown; readonly messages?: unknown }): string {
@@ -709,7 +800,11 @@ async function* captureSessionStream(stream: AsyncIterable<unknown>, onComplete:
       yield chunk;
     }
   } finally {
-    await onComplete(assistantText);
+    try {
+      await onComplete(assistantText);
+    } catch (error) {
+      process.stderr.write(`session save failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
   }
 }
 
@@ -761,6 +856,21 @@ async function* animatedFullStream(resultPromise: Promise<unknown>): AsyncIterab
 
   const resolved = result ?? await resultPromise as { readonly fullStream: AsyncIterable<unknown> };
   yield* withInlineProgress(resolved.fullStream);
+}
+
+function safePruneSlashMessages(messages: readonly ModelMessage[]): readonly ModelMessage[] {
+  const filtered = removeSlashCommandMessages(messages);
+  const recent = filtered.slice(-COMPACT_KEEP_MESSAGES);
+  try {
+    return pruneMessages({
+      messages: recent,
+      reasoning: "all",
+      toolCalls: "before-last-5-messages",
+      emptyMessages: "remove",
+    });
+  } catch {
+    return messages;
+  }
 }
 
 export async function* withInlineProgress(stream: AsyncIterable<unknown>): AsyncIterable<unknown> {

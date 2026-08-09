@@ -70,13 +70,13 @@ export function createOpenAICompatibleCodingAgent(options: OpenAICompatibleCodin
         ...(compactedMessages === undefined ? {} : { messages: compactedMessages }),
       };
     },
-    onStepEnd: ({ stepNumber, finishReason, toolCalls, usage, performance }) => {
+    onStepEnd: (event) => {
       logger.info("agent.step", {
-        stepNumber,
-        finishReason,
-        tools: toolCalls.map((toolCall) => toolCall.toolName),
-        totalTokens: usage.totalTokens,
-        elapsedMs: performance.stepTimeMs,
+        stepNumber: readNumberProperty(event, "stepNumber") ?? -1,
+        finishReason: readStringProperty(event, "finishReason") ?? "unknown",
+        tools: readToolCallNames(readArrayProperty(event, "toolCalls")),
+        totalTokens: readObjectNumberProperty(event, "usage", "totalTokens") ?? 0,
+        elapsedMs: readObjectNumberProperty(event, "performance", "stepTimeMs") ?? 0,
       });
     },
   });
@@ -86,11 +86,11 @@ export function createOpenAICompatibleCodingAgent(options: OpenAICompatibleCodin
 
 
 function safeCompactedMessages(messages: readonly ModelMessage[], contextSize: number, logger: Logger): ModelMessage[] | undefined {
-  if (!shouldCompact(messages, contextSize)) {
-    return undefined;
-  }
-
   try {
+    if (!shouldCompact(messages, contextSize)) {
+      return undefined;
+    }
+
     return pruneMessages({
       messages: [...messages],
       reasoning: "all",
@@ -193,6 +193,33 @@ function recoveryAction(failure: ToolFailure): string {
     default:
       return "Change strategy before retrying; collect missing context or choose a safer tool.";
   }
+}
+
+function readArrayProperty(value: unknown, key: string): readonly unknown[] {
+  if (typeof value !== "object" || value === null || !(key in value)) {
+    return [];
+  }
+
+  const property = (value as Record<string, unknown>)[key];
+  return Array.isArray(property) ? property : [];
+}
+
+function readNumberProperty(value: unknown, key: string): number | undefined {
+  if (typeof value !== "object" || value === null || !(key in value)) {
+    return undefined;
+  }
+
+  const property = (value as Record<string, unknown>)[key];
+  return typeof property === "number" && Number.isFinite(property) ? property : undefined;
+}
+
+function readObjectNumberProperty(value: unknown, objectKey: string, propertyKey: string): number | undefined {
+  const record = readObjectProperty(value, objectKey);
+  return readNumberProperty(record, propertyKey);
+}
+
+function readToolCallNames(toolCalls: readonly unknown[]): readonly string[] {
+  return toolCalls.map((toolCall) => readStringProperty(toolCall, "toolName") ?? "tool");
 }
 
 function readObjectProperty(value: unknown, key: string): Record<string, unknown> | undefined {

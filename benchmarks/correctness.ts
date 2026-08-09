@@ -1,4 +1,4 @@
-import { readFile, rm } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHarness, type ReadOutput, type SearchOutput, type BashOutput, type WriteOutput, type UpdateOutput } from "../src/index.js";
 import { JsonConsoleLogger } from "../src/core/logger.js";
@@ -88,6 +88,7 @@ async function main(): Promise<void> {
     path: "src/example.ts",
     content: "export const value = 2;\n",
   }, context)));
+  results.push(recordFailureCode("registry converts null tool input to schema failure", "SCHEMA_INVALID", await registry.run("read", null, context)));
 
   const read = await registry.run<ReadOutput>("read", {
     path: "src/example.ts",
@@ -261,12 +262,23 @@ async function main(): Promise<void> {
   ));
 
   const compactText = await collectSlashText(slashAgent, "/compact");
+  const brokenModelConfigPath = join(workspace, "broken-model.json");
+  await writeFile(brokenModelConfigPath, "{not-json", "utf8");
+  results.push(recordCheck("model config ignores malformed JSON", await loadModelConfig(brokenModelConfigPath) === undefined));
+
   results.push(recordCheck("slash compact returns local confirmation", compactText.includes("Context compacted")));
 
   const agentsText = await collectSlashText(slashAgent, "/agents");
   results.push(recordCheck("slash agents documents subagent roles", agentsText.includes("Built-in subagents") && agentsText.includes("research") && agentsText.includes("review") && agentsText.includes("plan") && agentsText.includes("compact handoff") && agentsText.includes("interrupt the current stream")));
-  const sessionsText = await collectSlashText(slashAgent, "/sessions");
-  results.push(recordCheck("slash sessions lists resumable store", sessionsText.includes("Saved sessions") || sessionsText.includes("No saved sessions")));
+  const sessionsText = await collectSlashText(slashAgent, "/session");
+  const namedSessionText = await collectSlashText(slashAgent, "/session name feature branch");
+  results.push(recordCheck(
+    "slash session picker supports alias and naming",
+    sessionsText.includes("## Sessions")
+      && sessionsText.includes("/session name <name>")
+      && namedSessionText.includes("Session named: feature-branch")
+      && namedSessionText.includes("Future turns in this TUI will save under this name"),
+  ));
 
   const instructions = createCodingInstructions(workspace);
   results.push(recordCheck(
@@ -308,9 +320,10 @@ async function main(): Promise<void> {
     codingAgentSource.includes("Failure recovery protocol for small models")
       && codingAgentSource.includes("location=")
       && codingAgentSource.includes("observed=")
-      && codingAgentSource.includes("next=")
+      && codingAgentSource.includes("readToolCallNames")
       && codingAgentSource.includes("agent.compaction.failed")
-      && codingAgentSource.includes("SUBAGENT_ABORTED"),
+      && codingAgentSource.includes("SUBAGENT_ABORTED")
+      && codingAgentSource.includes("readObjectNumberProperty"),
   ));
 
   const aiToolsSource = await readFile("src/ai/ai-tools.ts", "utf8");
@@ -324,6 +337,27 @@ async function main(): Promise<void> {
       && todoToolSource.includes("normalizeTodoInput")
       && todoToolSource.includes("FALLBACK_TASK")
       && todoToolSource.includes("fallback"),
+  ));
+  const slashAgentSource = await readFile("src/tui/slash-agent.ts", "utf8");
+  const modelConfigSource = await readFile("src/tui/model-config.ts", "utf8");
+  const sessionStoreSource = await readFile("src/tui/session-store.ts", "utf8");
+  const registrySource = await readFile("src/core/registry.ts", "utf8");
+  results.push(recordCheck(
+    "boundary guards prevent crashes from malformed runtime state",
+    registrySource.includes("inputKeys(input)")
+      && registrySource.includes("return typeof input === \"object\" && input !== null ? Object.keys(input) : []")
+      && slashAgentSource.includes("safePruneSlashMessages")
+      && slashAgentSource.includes("session save failed")
+      && modelConfigSource.includes("error instanceof SyntaxError")
+      && sessionStoreSource.includes("error instanceof SyntaxError"),
+  ));
+  results.push(recordCheck(
+    "slash session commands can name and switch conversations",
+    slashAgentSource.includes("case \"session\"")
+      && slashAgentSource.includes("/session <id|number>")
+      && slashAgentSource.includes("resolveSessionSelection")
+      && slashAgentSource.includes("this.sessionPrefix = session.messages")
+      && slashAgentSource.includes("Future turns in this TUI will save under this name"),
   ));
   const fallbackTodo = normalizeTodoInput({ tasks: ["Inspect repo", "Implement fix"] });
   const textTodo = normalizeTodoInput({ text: "[x] Research\n[>] Implement\n[!] Blocked review" });

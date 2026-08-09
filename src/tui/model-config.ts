@@ -23,7 +23,7 @@ export async function loadModelConfig(path: string = MODEL_CONFIG_PATH): Promise
   try {
     return parseModelConfig(JSON.parse(await readFile(path, "utf8")));
   } catch (error) {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+    if (isErrnoCode(error, "ENOENT") || error instanceof SyntaxError) {
       return undefined;
     }
     throw error;
@@ -100,5 +100,9 @@ function readPositiveInteger(value: unknown): number | undefined {
     return undefined;
   }
   return value;
+}
+
+function isErrnoCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 

@@ -78,7 +78,7 @@ async function readStore(): Promise<SessionFile> {
     const parsed = JSON.parse(text) as Partial<SessionFile>;
     return { sessions: Array.isArray(parsed.sessions) ? parsed.sessions.filter(isHarnessSession).slice(0, MAX_SESSIONS) : [] };
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    if (isErrnoCode(error, "ENOENT") || error instanceof SyntaxError) {
       return { sessions: [] };
     }
     throw error;
@@ -100,4 +100,8 @@ function isHarnessSession(value: unknown): value is HarnessSession {
     && typeof record.model === "string"
     && typeof record.updatedAt === "string"
     && Array.isArray(record.messages);
+}
+
+function isErrnoCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
