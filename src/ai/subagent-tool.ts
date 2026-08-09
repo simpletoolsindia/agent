@@ -8,26 +8,25 @@ const SUBAGENT_TOOL_ORDER = ["search", "read"] as const;
 const SUBAGENT_INPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["taskGoal", "currentFolderPath", "referenceFiles", "implementationSteps", "validation", "expectedOutcome"],
+  required: ["taskGoal"],
   properties: {
     role: {
       type: "string",
       enum: ["research", "review", "plan"],
-      description: "Subagent mode. research maps code, review critiques evidence, plan returns a non-mutating implementation plan.",
+      description: "Subagent mode. Default research. Use review for risks and plan for non-mutating implementation plans.",
     },
     taskGoal: {
       type: "string",
       minLength: 1,
-      description: "Concrete goal for this single sequential task.",
+      description: "Concrete research, review, or planning goal for the subagent.",
     },
     currentFolderPath: {
       type: "string",
       minLength: 1,
-      description: "Current workspace folder path supplied by the main agent.",
+      description: "Workspace folder path. Optional; defaults to the active workspace.",
     },
     referenceFiles: {
       type: "array",
-      minItems: 1,
       items: {
         type: "object",
         additionalProperties: false,
@@ -37,24 +36,22 @@ const SUBAGENT_INPUT_SCHEMA = {
           reason: { type: "string", minLength: 1 },
         },
       },
-      description: "Files or existing logic/patterns the subagent should inspect before answering.",
+      description: "Known files or directories to inspect first. Optional; the subagent can search when omitted.",
     },
     implementationSteps: {
       type: "array",
-      minItems: 1,
       items: { type: "string", minLength: 1 },
-      description: "Ordered steps the main agent expects for this task.",
+      description: "Optional focus steps for the subagent.",
     },
     validation: {
       type: "array",
-      minItems: 1,
       items: { type: "string", minLength: 1 },
-      description: "Focused validation commands or scenarios the main agent must run after this task.",
+      description: "Optional validation scenarios the main agent expects to run.",
     },
     expectedOutcome: {
       type: "string",
       minLength: 1,
-      description: "Observable outcome that proves this task is complete.",
+      description: "Optional observable outcome expected from the main task.",
     },
   },
 } as const;
@@ -67,11 +64,11 @@ type SubagentReferenceFile = {
 type SubagentInput = {
   readonly role?: "research" | "review" | "plan";
   readonly taskGoal: string;
-  readonly currentFolderPath: string;
-  readonly referenceFiles: readonly SubagentReferenceFile[];
-  readonly implementationSteps: readonly string[];
-  readonly validation: readonly string[];
-  readonly expectedOutcome: string;
+  readonly currentFolderPath?: string;
+  readonly referenceFiles?: readonly SubagentReferenceFile[];
+  readonly implementationSteps?: readonly string[];
+  readonly validation?: readonly string[];
+  readonly expectedOutcome?: string;
 };
 
 type SubagentOutput = {
@@ -92,9 +89,9 @@ export function createSubagentTool(
     title: "Subagent · Context offload",
     metadata: { safety: "read-only" },
     description: [
-      "Delegate one detailed sequential task to a read-only subagent for research, review, or planning.",
-      "The main agent must include the current folder path, reference files, implementation steps, validation steps, and expected outcome.",
-      "The subagent can use only search and read, then returns a concise summary with evidence for the main agent to validate.",
+      "Delegate context-heavy research, review, or planning to a read-only subagent.",
+      "Use this before reading many files yourself. Only taskGoal is required; include referenceFiles when known.",
+      "The subagent can use search and read, then returns a concise evidence-backed summary for the main agent to validate.",
     ].join(" "),
     inputSchema: jsonSchema(SUBAGENT_INPUT_SCHEMA as never),
     strict: true,
@@ -114,7 +111,7 @@ export function createSubagentTool(
           toolOrder: [...SUBAGENT_TOOL_ORDER],
           temperature: 0,
         }).generate({
-          prompt: formatSubagentPrompt(parsed),
+          prompt: formatSubagentPrompt(parsed, context.pathPolicy.resolveInside(".")),
           abortSignal: executionOptions.abortSignal,
         });
 
@@ -178,14 +175,18 @@ function readonlyRegistryTool(name: "search" | "read", registry: ToolRegistry, c
   });
 }
 
-function formatSubagentPrompt(input: SubagentInput): string {
+function formatSubagentPrompt(input: SubagentInput, workspaceRoot: string): string {
+  const referenceFiles = input.referenceFiles ?? [];
+  const implementationSteps = input.implementationSteps ?? ["Map the relevant code or references", "Summarize evidence and risks"];
+  const validation = input.validation ?? ["Main agent validates the completed implementation"];
+  const expectedOutcome = input.expectedOutcome ?? "Relevant files, symbols, evidence, and the smallest useful next action are summarized.";
   return [
     `# Task goal\n${input.taskGoal}`,
-    `# Current folder path\n${input.currentFolderPath}`,
-    `# Reference files\n${input.referenceFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}`,
-    `# Implementation steps\n${input.implementationSteps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
-    `# Validation\n${input.validation.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
-    `# Expected outcome\n${input.expectedOutcome}`,
+    `# Current folder path\n${input.currentFolderPath ?? workspaceRoot}`,
+    `# Reference files\n${referenceFiles.length === 0 ? "- <none supplied; search first>" : referenceFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}`,
+    `# Implementation steps\n${implementationSteps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
+    `# Validation\n${validation.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
+    `# Expected outcome\n${expectedOutcome}`,
   ].join("\n\n");
 }
 

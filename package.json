@@ -3,12 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "harness": "dist/src/cli/main.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "benchmark": "node dist/benchmarks/bench.js",
     "correctness": "node dist/benchmarks/correctness.js",
     "cli": "node dist/src/cli/main.js",
-    "tui": "node dist/src/cli/main.js tui"
+    "tui": "node dist/src/cli/main.js tui",
+    "install:local": "./install.sh",
+    "uninstall:local": "./uninstall.sh",
+    "version:local": "./version.sh"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.36",

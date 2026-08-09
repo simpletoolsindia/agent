@@ -1,4 +1,5 @@
 import {
+  isStepCount,
   pruneMessages,
   ToolLoopAgent,
   type ModelMessage,
@@ -18,6 +19,7 @@ import {
 const TOOL_ORDER = ["subagent", "search", "read", "update", "write", "bash"] as const;
 const COMPACTION_RATIO = 0.7;
 const RECENT_TOOL_MESSAGES_TO_KEEP = 5;
+const LOOP_STEP_LIMIT = 80;
 
 export type OpenAICompatibleCodingAgentOptions = OpenAICompatibleModelOptions & ContextFileOptions & {
   readonly cwd: string;
@@ -55,6 +57,7 @@ export function createOpenAICompatibleCodingAgent(options: OpenAICompatibleCodin
     tools: toolBundle.tools,
     toolApproval: toolBundle.approvals,
     toolOrder: [...TOOL_ORDER],
+    stopWhen: isStepCount(LOOP_STEP_LIMIT),
     prepareStep: ({ stepNumber, steps, messages }) => {
       const failureHint = formatFailureHint(steps);
       const compactedMessages = shouldCompact(messages, contextSize)

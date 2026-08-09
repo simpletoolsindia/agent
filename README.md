@@ -14,12 +14,13 @@ It can run with Ollama through Ollama's OpenAI-compatible API.
 
 ## What you get
 
-- One-shot CLI agent: `npm run cli -- ai ...`
-- Interactive terminal UI: `npm run tui -- ...`
+- One-shot CLI agent: `harness ai ...` after `./install.sh`, or `npm run cli -- ai ...` inside the clone
+- Interactive terminal UI: `harness tui --setup` after install, or `npm run tui -- ...` inside the clone
+- Local Ollama setup shortcut in TUI: `/settings ollama`
 - Local Ollama support: `--base-url http://localhost:11434/v1 --api-key ollama`
 - Safer edits: `update` refuses stale file hashes and wrong line ranges
 - Benchmarks and correctness checks
-- Shared CLI/TUI agent loop with step logging, stable tool ordering, failure recovery hints, and context compaction
+- Shared CLI/TUI agent loop with step logging, stable tool ordering, failure recovery hints, context compaction, and a higher safety step limit for long tasks
 - Shell-string `bash` commands, so prompts can ask for `npm run build` directly
 
 ## Requirements
@@ -52,9 +53,16 @@ The installer:
 1. checks for Node.js 20+ and npm,
 2. installs dependencies with `npm ci` when `package-lock.json` exists,
 3. builds TypeScript,
-4. smoke-checks the CLI help output.
+4. smoke-checks the CLI help output,
+5. links `harness` into `${HOME}/.local/bin` by default.
 
-Manual equivalent:
+Add the install directory to your shell profile if needed:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Manual equivalent without linking:
 
 ```bash
 npm ci
@@ -62,7 +70,18 @@ npm run build
 npm run cli -- --help
 ```
 
-You should see the `ai` and `tui` commands in the help output.
+Version and uninstall:
+
+```bash
+./version.sh
+./uninstall.sh
+```
+
+Custom install location:
+
+```bash
+HARNESS_INSTALL_BIN_DIR=/usr/local/bin ./install.sh
+```
 
 ## Install and start Ollama
 
@@ -143,7 +162,7 @@ npm run tui -- \
   --ui-density compact
 ```
 
-The TUI opens a rich setup screen when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, `agent.md`, and `skills.md` before the chat starts. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
+The TUI opens a rich setup screen when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, `agent.md`, and `skills.md` before the chat starts. The screen uses a bounded status bar so setup messages do not overlap narrow terminals. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
 
 UI density presets:
 
@@ -188,15 +207,18 @@ TUI slash commands run locally and do not spend an LLM call:
 
 | Command | Action |
 | --- | --- |
-| `/settings show` | Show active model, endpoint, approval, and compaction settings. |
+| `/settings menu` | Show quick setup shortcuts, active values, and examples. |
+| `/settings ollama` | Configure local Ollama defaults in one command. |
+| `/settings openai` | Clear the custom endpoint and use OpenAI default. |
+| `/settings help` | Show all settings commands. |
 | `/settings model <id>` | Switch the model for future turns. |
-| `/settings base-url <url>` | Switch OpenAI-compatible endpoint for future turns. |
+| `/settings base-url <url>` | Switch OpenAI-compatible endpoint for future turns; `none` clears it. |
 | `/settings api-key <key>` | Update the API key; use `none` to unset it. |
 | `/settings approval safe\|auto` | Change approval mode without restarting the TUI. |
 | `/settings agent-md <path>` | Load additional agent instructions markdown for future turns. |
 | `/settings skills-md <path>` | Load additional skills markdown for future turns. |
 | `/compact` | Drop slash-command chatter and prune older tool-heavy history for future turns. |
-| `/agents` | Show the built-in read-only subagent roles and detailed task payload format. |
+| `/agents` | Show the built-in read-only subagent roles and simplified task payload format. |
 
 Long model starts show a lightweight processing indicator before streaming begins.
 
@@ -349,10 +371,10 @@ CLI and TUI use the same `ToolLoopAgent` setup:
 - step logs with finish reason, tool names, token usage, and elapsed time
 - targeted recovery hints after failed tool results
 - automatic context compaction for long sessions
-- read-only subagent delegation for broad research, review, and non-mutating plans
-- no fixed loop step cap; the loop ends when the model returns a final response instead of another tool call
+- read-only subagent delegation for broad research, review, and non-mutating plans; only `taskGoal` is required, with optional reference files when known
+- high safety step limit for long tasks; the model is instructed not to final-answer while requested work remains
 - non-trivial tasks start with a sequential task list containing goal, current folder path, reference files, implementation steps, validation, expected outcome, and clean-code/SOLID notes
-- subagent calls are sequential: delegate one detailed task, inspect the result, validate the task, then continue
+- subagent calls are encouraged for context-heavy steps, then the main agent inspects the result, validates the task, and continues
 - repository context comes from `search` and `read`; the agent is instructed not to run git commands just to provide context to the LLM
 - optional `--agent-md <path>` and `--skills-md <path>` append workspace markdown instructions to the agent prompt
 

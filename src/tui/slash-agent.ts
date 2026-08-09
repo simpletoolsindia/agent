@@ -11,11 +11,11 @@ import {
   type OpenAICompatibleCodingAgent,
   type OpenAICompatibleCodingAgentOptions,
 } from "../ai/coding-agent.js";
+import { renderStatusBar } from "./status-bar.js";
 
 const SETTINGS_KEYS = ["model", "base-url", "api-key", "provider-name", "approval", "agent-md", "skills-md"] as const;
 const COMPACT_KEEP_MESSAGES = 8;
-const PROCESSING_SPINNER_DELAY_MS = 250;
-const PROCESSING_SPINNER_INTERVAL_MS = 350;
+const PROCESSING_NOTICE_DELAY_MS = 250;
 
 type SettingsKey = typeof SETTINGS_KEYS[number];
 type RuntimeSettings = OpenAICompatibleCodingAgentOptions;
@@ -119,8 +119,23 @@ class SlashCommandAgent {
   }
 
   private applySettingsCommand(args: readonly string[]): CommandResult {
-    if (args.length === 0 || args[0] === "show") {
+    if (args.length === 0 || args[0] === "show" || args[0] === "menu") {
       return { text: formatSettings(this.settings, this.compactNextPrompts, this.compactRuns) };
+    }
+    if (args[0] === "help") {
+      return { text: settingsHelpText() };
+    }
+    if (args[0] === "ollama" || args[0] === "openai") {
+      const messages = this.applySettingsPreset(args[0]);
+      return {
+        text: [
+          `## ${args[0] === "ollama" ? "Ollama" : "OpenAI"} setup applied`,
+          ...messages.map((message) => `- ${message}`),
+          "",
+          formatSettings(this.settings, this.compactNextPrompts, this.compactRuns),
+        ].join("\n"),
+        rebuildAgent: true,
+      };
     }
 
     const updates = parseSettingsUpdates(args);
@@ -128,7 +143,7 @@ class SlashCommandAgent {
       return {
         text: [
           "## Settings command not understood",
-          "Use `/settings show` or `/settings model <id> base-url <url> api-key <key>`.",
+          "Use `/settings menu`, `/settings ollama`, or `/settings model <id> base-url <url> api-key <key>`.",
           `Known keys: ${SETTINGS_KEYS.join(", ")}.`,
         ].join("\n\n"),
       };
@@ -148,6 +163,21 @@ class SlashCommandAgent {
       ].join("\n"),
       rebuildAgent: true,
     };
+  }
+
+  private applySettingsPreset(preset: "ollama" | "openai"): readonly string[] {
+    if (preset === "ollama") {
+      this.settings = {
+        ...this.settings,
+        model: this.settings.model.trim().length === 0 || this.settings.model === "gpt-4o-mini" ? "qwen2.5-coder:7b" : this.settings.model,
+        baseURL: "http://localhost:11434/v1",
+        apiKey: "ollama",
+      };
+      return ["base-url = http://localhost:11434/v1", "api-key = set", `model = ${this.settings.model}`];
+    }
+
+    this.settings = { ...this.settings, baseURL: undefined };
+    return ["base-url = default OpenAI endpoint", `model = ${this.settings.model}`, `api-key = ${this.settings.apiKey === undefined ? "unset" : "set"}`];
   }
 
   private applySetting(key: SettingsKey, value: string): string {
@@ -276,7 +306,15 @@ function parseSettingsKey(value: string): SettingsKey | undefined {
 
 function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, compactRuns: number): string {
   return [
-    "## Active settings",
+    "## Settings",
+    "",
+    "Quick setup:",
+    "",
+    "- `/settings ollama` sets `base-url` to `http://localhost:11434/v1` and API key to `ollama`.",
+    "- `/settings openai` clears `base-url` and uses the default OpenAI endpoint.",
+    "- `/settings menu` shows this screen. `/settings help` shows commands only.",
+    "",
+    "Active values:",
     "",
     `| Setting | Value |`,
     `| --- | --- |`,
@@ -289,14 +327,33 @@ function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, comp
     `| skills-md | ${settings.skillsMdPath ?? "unset"} |`,
     `| compact | ${compactEnabled ? `enabled (${compactRuns})` : "not yet run"} |`,
     "",
-    "Examples:",
+    "Common changes:",
     "",
     "```txt",
-    "/settings model qwen2.5-coder:7b base-url http://localhost:11434/v1 api-key ollama",
+    "/settings ollama",
+    "/settings model qwen2.5-coder:7b",
     "/settings approval auto",
     "/settings agent-md AGENT.md skills-md SKILLS.md",
-    "/compact",
+    "/settings api-key none",
     "```",
+  ].join("\n");
+}
+
+function settingsHelpText(): string {
+  return [
+    "## Settings commands",
+    "",
+    "| Command | Action |",
+    "| --- | --- |",
+    "| `/settings menu` | Show setup shortcuts and active values. |",
+    "| `/settings ollama` | Configure local Ollama defaults. |",
+    "| `/settings openai` | Use the default OpenAI endpoint. |",
+    "| `/settings model <id>` | Switch model for future turns. |",
+    "| `/settings base-url <url>` | Switch OpenAI-compatible endpoint. `none` clears it. |",
+    "| `/settings api-key <key>` | Update API key. `none` unsets it. |",
+    "| `/settings approval safe|auto` | Change tool approval mode. |",
+    "| `/settings agent-md <path>` | Load additional agent instructions markdown. `none` unsets it. |",
+    "| `/settings skills-md <path>` | Load additional skills markdown. `none` unsets it. |",
   ].join("\n");
 }
 
@@ -306,13 +363,9 @@ function slashHelpText(settings: RuntimeSettings, compactEnabled: boolean, compa
     "",
     "| Command | Action |",
     "| --- | --- |",
-    "| `/settings show` | Show active LLM config. |",
-    "| `/settings model <id>` | Switch model for future turns. |",
-    "| `/settings base-url <url>` | Switch OpenAI-compatible endpoint. |",
-    "| `/settings api-key <key>` | Update API key; `none` unsets it. |",
-    "| `/settings approval safe|auto` | Change tool approval mode. |",
-    "| `/settings agent-md <path>` | Load additional agent instructions markdown for future turns; `none` unsets it. |",
-    "| `/settings skills-md <path>` | Load additional skills markdown for future turns; `none` unsets it. |",
+    "| `/settings menu` | Show setup shortcuts, active config, and examples. |",
+    "| `/settings ollama` | Configure local Ollama in one command. |",
+    "| `/settings help` | Show all settings commands. |",
     "| `/compact` | Prune old slash chatter and tool-heavy history for future turns. |",
     "| `/agents` | Show built-in read-only subagent modes and delegation examples. |",
     "",
@@ -326,16 +379,16 @@ function agentsHelpText(): string {
     "",
     "Harness exposes one read-only `subagent` tool to the model. It offloads broad research into a separate context window, then returns a concise evidence-backed summary.",
     "",
-    "| Role | Use when | Tools |",
-    "| --- | --- | --- |",
-    "| `research` | Mapping unfamiliar code or collecting references before an edit. | `search`, `read` |",
-    "| `review` | Checking a proposed change for bugs, regressions, and missing verification. | `search`, `read` |",
-    "| `plan` | Creating a non-mutating implementation plan for larger work. | `search`, `read` |",
+    "| Role | Use when | Tools | Required input |",
+    "| --- | --- | --- | --- |",
+    "| `research` | Mapping unfamiliar code or collecting references before an edit. | `search`, `read` | `taskGoal` |",
+    "| `review` | Checking a proposed change for bugs, regressions, and missing verification. | `search`, `read` | `taskGoal` |",
+    "| `plan` | Creating a non-mutating implementation plan for larger work. | `search`, `read` | `taskGoal` |",
     "",
     "Example model-facing delegation:",
     "",
     "```json",
-    "{ \"role\": \"research\", \"taskGoal\": \"Map TUI startup flow\", \"currentFolderPath\": \"/workspace/project\", \"referenceFiles\": [{ \"path\": \"src/tui/ai-tui.ts\", \"reason\": \"TUI startup pattern\" }], \"implementationSteps\": [\"Inspect startup flow\"], \"validation\": [\"Main agent runs npm run build\"], \"expectedOutcome\": \"Relevant files and clean-code risks are summarized\" }",
+    "{ \"role\": \"research\", \"taskGoal\": \"Map TUI startup flow\", \"referenceFiles\": [{ \"path\": \"src/tui/ai-tui.ts\", \"reason\": \"TUI startup pattern\" }] }",
     "```",
     "",
     "Edits still happen in the main agent with normal `update`/`write` approval.",
@@ -502,16 +555,17 @@ async function* animatedFullStream(resultPromise: Promise<unknown>): AsyncIterab
     },
   );
 
-  await delay(PROCESSING_SPINNER_DELAY_MS);
+  await delay(PROCESSING_NOTICE_DELAY_MS);
   if (!settled) {
     yield { type: "start-step" };
     yield { type: "reasoning-start", id: "processing" };
-    yield { type: "reasoning-delta", id: "processing", text: "Preparing model call" };
+    yield {
+      type: "reasoning-delta",
+      id: "processing",
+      text: renderStatusBar("Processing", "Waiting for model response or tool stream…", 72, "busy"),
+    };
     while (!settled) {
-      await delay(PROCESSING_SPINNER_INTERVAL_MS);
-      if (!settled) {
-        yield { type: "reasoning-delta", id: "processing", text: "." };
-      }
+      await delay(250);
     }
     yield { type: "reasoning-end", id: "processing" };
   }

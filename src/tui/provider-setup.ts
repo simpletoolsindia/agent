@@ -1,4 +1,5 @@
 import type { OpenAICompatibleCodingAgentOptions } from "../ai/coding-agent.js";
+import { clipAnsi, renderStatusBar, visibleLength } from "./status-bar.js";
 
 const ESC = "\x1B";
 const ENTER_ALT_SCREEN = `${ESC}[?1049h${ESC}[?25l`;
@@ -254,14 +255,14 @@ export function renderProviderSetupScreen(state: ProviderSetupState, width: numb
   const rows = [
     topBorder(safeWidth, " Provider setup "),
     framedLine(`${BOLD}Configure the coding agent${RESET}`, contentWidth),
-    framedLine(`${DIM}Edit provider and markdown instruction fields before the current TUI session starts.${RESET}`, contentWidth),
+    framedLine(`${DIM}Use presets for fast setup, then adjust model, provider, and markdown context.${RESET}`, contentWidth),
     framedLine("", contentWidth),
     ...FIELDS.flatMap((field, index) => renderFieldRows(state, field, index, contentWidth)),
     framedLine("", contentWidth),
     framedLine(`${CYAN}Tab/↓${RESET} next  ${CYAN}↑${RESET} previous  ${CYAN}Enter${RESET} next/start  ${CYAN}Ctrl+S${RESET} start`, contentWidth),
-    framedLine(`${CYAN}Ctrl+O${RESET} Ollama preset  ${CYAN}Ctrl+D${RESET} OpenAI default  ${CYAN}Ctrl+U${RESET} clear field  ${CYAN}Esc${RESET} cancel`, contentWidth),
+    framedLine(`${CYAN}Ctrl+O${RESET} local Ollama  ${CYAN}Ctrl+D${RESET} OpenAI endpoint  ${CYAN}Ctrl+U${RESET} clear  ${CYAN}Esc${RESET} cancel`, contentWidth),
     framedLine("", contentWidth),
-    framedLine(state.message === undefined ? "" : `${YELLOW}${state.message}${RESET}`, contentWidth),
+    framedLine(renderStatusBar("Status", state.message ?? "Ready", contentWidth, state.message === undefined ? "idle" : "busy"), contentWidth),
     bottomBorder(safeWidth),
   ];
   return rows.join("\n");
@@ -321,12 +322,7 @@ function bottomBorder(width: number): string {
 }
 
 function framedLine(text: string, width: number): string {
-  const visible = stripAnsi(text);
-  const clipped = visible.length > width ? text.slice(0, Math.max(0, width - 1)) : text;
-  const padding = " ".repeat(Math.max(0, width - stripAnsi(clipped).length));
+  const clipped = clipAnsi(text, width);
+  const padding = " ".repeat(Math.max(0, width - visibleLength(clipped)));
   return `│ ${clipped}${padding} │`;
-}
-
-function stripAnsi(text: string): string {
-  return text.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
 }

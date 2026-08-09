@@ -4,11 +4,23 @@ set -eu
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$ROOT_DIR"
 
+BIN_NAME=${HARNESS_BIN_NAME:-harness}
+BIN_DIR=${HARNESS_INSTALL_BIN_DIR:-"$HOME/.local/bin"}
+LINK_TARGET="$BIN_DIR/$BIN_NAME"
+CLI_TARGET="$ROOT_DIR/dist/src/cli/main.js"
+
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     printf '%s\n' "Missing required command: $1" >&2
     exit 1
   fi
+}
+
+path_contains() {
+  case ":$PATH:" in
+    *":$1:"*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 require_command node
@@ -25,14 +37,29 @@ fi
 npm run build
 npm run cli -- --help >/dev/null
 
-cat <<'MSG'
+mkdir -p "$BIN_DIR"
+ln -sfn "$CLI_TARGET" "$LINK_TARGET"
+chmod +x "$CLI_TARGET"
+
+cat <<MSG
 
 Agent installed successfully.
 
+Installed command:
+  $LINK_TARGET
+
 Next commands:
-  npm run tui -- --setup
-  npm run cli -- ai --prompt "Read package.json and explain the scripts"
+  $BIN_NAME tui --setup
+  $BIN_NAME ai --prompt "Read package.json and explain the scripts"
 
 For local Ollama, use:
-  npm run tui -- --model qwen2.5-coder:7b --base-url http://localhost:11434/v1 --api-key ollama
+  $BIN_NAME tui --model qwen2.5-coder:7b --base-url http://localhost:11434/v1 --api-key ollama
 MSG
+
+if ! path_contains "$BIN_DIR"; then
+  cat <<MSG
+
+Add this to your shell profile if '$BIN_NAME' is not found:
+  export PATH="$BIN_DIR:\$PATH"
+MSG
+fi

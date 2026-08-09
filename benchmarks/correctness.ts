@@ -7,6 +7,7 @@ import { createSlashCommandAgent } from "../src/tui/slash-agent.js";
 import { renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
 import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
+import { renderStatusBar } from "../src/tui/status-bar.js";
 
 const workspace = join(process.cwd(), ".correctness-workspace");
 
@@ -200,6 +201,14 @@ async function main(): Promise<void> {
     contextSettingsText.includes("| agent-md | AGENT.md |") && contextSettingsText.includes("| skills-md | SKILLS.md |"),
   ));
 
+  const ollamaSettingsText = await collectSlashText(slashAgent, "/settings ollama");
+  results.push(recordCheck(
+    "slash settings applies ollama preset",
+    ollamaSettingsText.includes("Ollama setup applied")
+      && ollamaSettingsText.includes("http://localhost:11434/v1")
+      && ollamaSettingsText.includes("| api-key | set |"),
+  ));
+
   const compactText = await collectSlashText(slashAgent, "/compact");
   results.push(recordCheck("slash compact returns local confirmation", compactText.includes("Context compacted")));
 
@@ -208,9 +217,10 @@ async function main(): Promise<void> {
 
   const instructions = createCodingInstructions(workspace);
   results.push(recordCheck(
-    "coding instructions include sequential clean-code workflow",
+    "coding instructions include completion and subagent workflow",
     instructions.includes(`Current folder path: ${workspace}`)
-      && instructions.includes("Delegate at most one task to subagent at a time")
+      && instructions.includes("Completion contract")
+      && instructions.includes("Use subagent immediately")
       && instructions.includes("Do not run git commands")
       && instructions.includes("Clean-code target"),
   ));
@@ -262,6 +272,12 @@ async function main(): Promise<void> {
       && setupScreen.includes("Agent.md path")
       && setupScreen.includes("Skills.md path")
       && setupScreen.includes("Ctrl+O"),
+  ));
+
+  const statusBar = renderStatusBar("Processing", "Waiting for model response or tool stream", 48, "busy");
+  results.push(recordCheck(
+    "status bar renders bounded processing state",
+    statusBar.includes("Processing") && statusBar.includes("█") && statusBar.length < 80,
   ));
 
   const passed = results.filter((result) => result.passed).length;
