@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v6 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v7 */";
 
 /**
  * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
@@ -208,9 +208,10 @@ function patchedViewportProgress(): string {
     "  let bar = \"\";",
     "  for (let index = 0; index < filled; index += 1) {",
     "    const t = filled > 1 ? index / (filled - 1) : ratio;",
-    "    const red = Math.round(255 * (1 - t));",
-    "    const green = Math.round(255 * t);",
-    "    bar += `\\x1B[38;2;${red};${green};50m█`;",
+    "    const red = Math.round(0 + 30 * t);",
+    "    const green = Math.round(220 - 30 * t);",
+    "    const blue = Math.round(255 - 115 * t);",
+    "    bar += `\\x1B[38;2;${red};${green};${blue}m█`;",
     "  }",
     "  return `${bar}${colors.reset}${colors.dim}${\"░\".repeat(empty)}${colors.reset}`;",
     "}",
@@ -311,12 +312,19 @@ function harnessToolOutputHelpers(): string {
     "function formatHarnessFrame(toolName, target, status, rows) {",
     "  const meta = harnessToolMeta(toolName);",
     "  const safeTarget = target === void 0 || target.length === 0 ? toolName : target;",
-    "  return [`${meta.icon} ${meta.label}: ${meta.badge} ${sliceMiddle(safeTarget, 38)} ⟦${status}⟧ ╮`, ...rows.slice(0, 18).map((row) => `│${row}`), \"╯\"].join(\"\\n\");",
+    "  const title = formatHarnessCardTitle(meta.icon, meta.label, meta.badge, safeTarget, status);",
+    "  return [title, ...rows.slice(0, 18).map((row) => `│ ${row}`), \"╰─\"].join(\"\\n\");",
     "}",
     "function formatHarnessDiffFrame(path, diff, added, removed) {",
-    "  const title = `✎ Edit: 🟦 ${sliceMiddle(path, 38)} ⟦+${added}/-${removed}⟧ ╮`;",
+    "  const title = formatHarnessCardTitle(\"✎\", \"Edit\", \"🟦\", path, `+${added}/-${removed}`);",
     "  const rows = harnessDiffRows(diff);",
-    "  return [title, ...rows, \"╯\"].join(\"\\n\");",
+    "  return [title, ...rows, \"╰─\"].join(\"\\n\");",
+    "}",
+    "function formatHarnessCardTitle(icon, label, badge, target, status) {",
+    "  const head = `╭─ ${icon} ${label}: ${badge} ${sliceMiddle(target, 38)} `;",
+    "  const tail = ` ⟦${status}⟧`;",
+    "  const rule = \"─\".repeat(Math.max(1, 78 - visibleLength(head) - visibleLength(tail)));",
+    "  return `${head}${rule}${tail}`;",
     "}",
     "function harnessToolMeta(toolName) {",
     "  switch (toolName) {",

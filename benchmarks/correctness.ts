@@ -7,7 +7,7 @@ import { createSlashCommandAgent, pickRuntimeSuggestion, withInlineProgress } fr
 import { reduceProviderSetupInput, renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
 import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
-import { renderActivityPulse, renderCliSplash, renderMetricStrip, renderProgressBar, renderProgressSteps, renderShimmerText, renderStatusBar, visibleLength } from "../src/tui/status-bar.js";
+import { renderActivityPulse, renderCliSplash, renderGradientText, renderMetricStrip, renderProgressBar, renderProgressSteps, renderShimmerText, renderStatusBar, stripAnsi, visibleLength } from "../src/tui/status-bar.js";
 import { patchAiSdkTuiRenderer } from "../src/tui/ai-sdk-tui-patch.js";
 import { createDoctorReport } from "../src/cli/doctor.js";
 
@@ -319,15 +319,15 @@ async function main(): Promise<void> {
     },
     message: "Ready",
   }, 88);
+  const plainSetupScreen = stripAnsi(setupScreen);
   results.push(recordCheck(
-    "provider setup renders OMP-style rich fields",
-    setupScreen.includes("Oh My Pi style setup")
-      && setupScreen.includes("Harness AI cockpit")
-      && setupScreen.includes("endpoint")
-      && setupScreen.includes("docs")
-      && setupScreen.includes("Connection")
-      && setupScreen.includes("Workspace context")
-      && setupScreen.includes("Ctrl+A"),
+    "provider setup renders modern OMP cockpit",
+    plainSetupScreen.includes("Oh My Pi cockpit")
+      && plainSetupScreen.includes("Modern five-tool workspace")
+      && plainSetupScreen.includes("Profile cards")
+      && plainSetupScreen.includes("Workspace context")
+      && plainSetupScreen.includes("Command deck")
+      && plainSetupScreen.includes("Ctrl+A"),
   ));
 
   const animatedSetupScreen = renderProviderSetupScreen({
@@ -372,25 +372,28 @@ async function main(): Promise<void> {
 
   const activityPulse = renderActivityPulse("AI running", "Use search before read", 56, 2, "busy");
   const cliSplash = renderCliSplash("qwen2.5-coder:7b", workspace, "auto", 88);
+  const plainCliSplash = stripAnsi(cliSplash);
   results.push(recordCheck(
     "rich CLI panels render animated affordances",
     activityPulse.includes("⠹")
       && activityPulse.includes("✦")
-      && cliSplash.includes("Harness AI · rich cockpit")
-      && cliSplash.includes("parallel search/read/bash")
-      && cliSplash.includes("◆ prompt"),
+      && plainCliSplash.includes("Harness AI · OMP cockpit")
+      && plainCliSplash.includes("parallel search/read/bash")
+      && plainCliSplash.includes("◆ prompt"),
   ));
 
   const metricStrip = renderMetricStrip([{ label: "model", value: "qwen", tone: "busy" }, { label: "approval", value: "auto", tone: "success" }], 48);
   const progressSteps = renderProgressSteps(["think", "tools", "answer"], 1, 48);
   const gradientBar = renderProgressBar({ current: 65, total: 100, width: 12, gradient: true });
+  const gradientText = renderGradientText("Modern");
   const shimmerText = renderShimmerText("Processing", 2);
   results.push(recordCheck(
-    "shared rich primitives render shimmer and progress UI",
-    metricStrip.includes("model")
+    "shared rich primitives render cool-palette progress UI",
+    metricStrip.includes("╭─")
       && metricStrip.includes("approval")
       && progressSteps.includes("◆ tools")
       && gradientBar.includes("░")
+      && gradientText.includes("\x1B[38;2;")
       && shimmerText.includes("✦")
       && visibleLength(progressSteps) <= 48,
   ));
@@ -398,10 +401,11 @@ async function main(): Promise<void> {
   await patchAiSdkTuiRenderer();
   const patchedTuiSource = await readFile("node_modules/@ai-sdk/tui/dist/index.js", "utf8");
   results.push(recordCheck(
-    "TUI all tool outputs use compact action frames",
-    patchedTuiSource.includes("rich tui patch v6")
-      && patchedTuiSource.includes("formatHarnessToolFrame")
-      && patchedTuiSource.includes("✎ Edit: 🟦")
+    "TUI all tool outputs use modern action frames",
+    patchedTuiSource.includes("rich tui patch v7")
+      && patchedTuiSource.includes("formatHarnessCardTitle")
+      && patchedTuiSource.includes("╭─ ${icon} ${label}:")
+      && patchedTuiSource.includes("✎\", \"Edit\", \"🟦")
       && patchedTuiSource.includes("◉\", label: \"Read")
       && patchedTuiSource.includes("⌕\", label: \"Search")
       && patchedTuiSource.includes("▶\", label: \"Bash"),

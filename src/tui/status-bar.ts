@@ -4,7 +4,7 @@ const GREEN = `${ESC}[32m`;
 const YELLOW = `${ESC}[33m`;
 const CYAN = `${ESC}[36m`;
 const BLUE = `${ESC}[34m`;
-const MAGENTA = `${ESC}[35m`;
+const ACCENT_BLUE = `${ESC}[94m`;
 const GRAY = `${ESC}[90m`;
 const BRIGHT_WHITE = `${ESC}[97m`;
 const BRIGHT_YELLOW = `${ESC}[93m`;
@@ -18,7 +18,6 @@ export const RICH_UI = {
   green: GREEN,
   yellow: YELLOW,
   cyan: CYAN,
-  magenta: MAGENTA,
   gray: GRAY,
   brightWhite: BRIGHT_WHITE,
   brightYellow: BRIGHT_YELLOW,
@@ -38,7 +37,7 @@ export type StatusMetric = {
 /** Renders the single-line progress/status row used by CLI and TUI stream hints. */
 export function renderStatusBar(label: string, message: string, width: number, tone: StatusTone = "idle", progress?: number): string {
   const safeWidth = Math.max(20, width);
-  const barWidth = Math.max(6, Math.min(18, Math.floor(safeWidth / 6)));
+  const barWidth = Math.max(8, Math.min(22, Math.floor(safeWidth / 5)));
   const normalizedProgress = progress === undefined ? defaultProgress(tone) : Math.min(1, Math.max(0, progress));
   const color = toneColor(tone);
   const bar = renderProgressBar({
@@ -48,7 +47,7 @@ export function renderStatusBar(label: string, message: string, width: number, t
     gradient: tone !== "idle",
   });
   const percent = `${Math.round(normalizedProgress * 100).toString().padStart(3)}%`;
-  const prefix = `${DIM}╭${RESET} ${color}${BOLD}${label}${RESET} ${bar} ${BRIGHT_WHITE}${BOLD}${percent}${RESET} ${DIM}│${RESET}`;
+  const prefix = `${DIM}╭─${RESET} ${color}${BOLD}${label}${RESET} ${bar} ${BRIGHT_WHITE}${BOLD}${percent}${RESET} ${DIM}│${RESET}`;
   const available = Math.max(0, safeWidth - visibleLength(prefix) - 1);
   return `${prefix} ${clipAnsi(message, available)}`;
 }
@@ -83,9 +82,7 @@ export function renderProgressBar(options: ProgressBarRenderOptions): string {
     let bar = "";
     for (let index = 0; index < filled; index += 1) {
       const t = filled > 1 ? index / (filled - 1) : ratio;
-      const red = Math.round(255 * (1 - t));
-      const green = Math.round(255 * t);
-      bar += `${rgb(red, green, 50)}${completeChar}`;
+      bar += `${modernGradientColor(t)}${completeChar}`;
     }
     return `${bar}${RESET}${GRAY}${incompleteChar.repeat(empty)}${RESET}`;
   }
@@ -117,19 +114,38 @@ export function renderShimmerText(text: string, frame: number, sparkleChars: rea
   return output;
 }
 
+/** Modern OMP-style text sweep: cyan → blue → green → amber. */
+export function renderGradientText(text: string, phase: number = 0): string {
+  let output = "";
+  const chars = [...text];
+  const denominator = Math.max(1, chars.length - 1);
+  for (let index = 0; index < chars.length; index += 1) {
+    const char = chars[index] ?? "";
+    if (char === " ") {
+      output += char;
+      continue;
+    }
+    const t = ((index / denominator) + phase) % 1;
+    output += `${modernGradientColor(t)}${BOLD}${char}${RESET}`;
+  }
+  return output;
+}
+
 export function renderCliPanel(title: string, rows: readonly string[], width: number = 88): string {
   const safeWidth = Math.max(48, width);
   const contentWidth = safeWidth - 4;
+  const titleText = renderGradientText(title);
+  const titleWidth = visibleLength(titleText);
   return [
-    `╭─ ${CYAN}${BOLD}${clipAnsi(title, Math.max(0, contentWidth - 3))}${RESET}${DIM}${"─".repeat(Math.max(0, contentWidth - visibleLength(title) - 2))}${RESET}╮`,
+    `╭─ ${titleText}${DIM}${"─".repeat(Math.max(0, contentWidth - titleWidth - 2))}${RESET}╮`,
     ...rows.map((row) => framedPanelLine(row, contentWidth)),
     `╰${DIM}${"─".repeat(safeWidth - 2)}${RESET}╯`,
   ].join("\n");
 }
 
 export function renderCliSplash(model: string, cwd: string, approvalMode: string, width: number = 88): string {
-  return renderCliPanel("Harness AI · rich cockpit", [
-    `${CYAN}${BOLD}Five-tool coding cockpit${RESET} ${DIM}parallel search/read/bash · guarded write/update · resumable TUI${RESET}`,
+  return renderCliPanel("Harness AI · OMP cockpit", [
+    `${renderGradientText("Five-tool coding cockpit")} ${DIM}parallel search/read/bash · guarded write/update · resumable TUI${RESET}`,
     renderMetricStrip([
       { label: "model", value: model, tone: "busy" },
       { label: "approval", value: approvalMode, tone: approvalMode === "auto" ? "success" : "warn" },
@@ -142,10 +158,7 @@ export function renderCliSplash(model: string, cwd: string, approvalMode: string
 
 export function renderMetricStrip(metrics: readonly StatusMetric[], width: number): string {
   const safeWidth = Math.max(20, width);
-  const rendered = metrics.map((metric) => {
-    const color = toneColor(metric.tone ?? "idle");
-    return `${DIM}${metric.label}${RESET} ${color}${BOLD}${metric.value}${RESET}`;
-  }).join(`${DIM}  │  ${RESET}`);
+  const rendered = metrics.map((metric) => renderMetricPill(metric)).join(" ");
   return clipAnsi(rendered, safeWidth);
 }
 
@@ -211,6 +224,33 @@ function framedPanelLine(text: string, width: number): string {
   const padding = " ".repeat(Math.max(0, width - visibleLength(clipped)));
   return `│ ${clipped}${padding} │`;
 }
+
+function renderMetricPill(metric: StatusMetric): string {
+  const color = toneColor(metric.tone ?? "idle");
+  const label = `${DIM}${metric.label}${RESET}`;
+  const value = `${color}${BOLD}${metric.value}${RESET}`;
+  return `${DIM}╭─${RESET}${label} ${value}${DIM}─╮${RESET}`;
+}
+
+function modernGradientColor(t: number): string {
+  const wrapped = ((t % 1) + 1) % 1;
+  const stops: readonly [number, number, number][] = [
+    [0, 220, 255],
+    [90, 130, 255],
+    [30, 190, 140],
+    [255, 190, 70],
+  ];
+  const scaled = wrapped * (stops.length - 1);
+  const index = Math.min(stops.length - 2, Math.floor(scaled));
+  const local = scaled - index;
+  const from = stops[index] ?? stops[0];
+  const to = stops[index + 1] ?? stops[stops.length - 1];
+  return rgb(
+    Math.round(from[0] + (to[0] - from[0]) * local),
+    Math.round(from[1] + (to[1] - from[1]) * local),
+    Math.round(from[2] + (to[2] - from[2]) * local),
+  );
+}
 function ansiEndIndex(text: string, start: number): number {
   const match = /\x1B\[[0-?]*[ -/]*[@-~]/.exec(text.slice(start));
   return match?.index === 0 ? start + match[0].length : start + 1;
@@ -242,6 +282,6 @@ function toneColor(tone: StatusTone): string {
     case "warn":
       return YELLOW;
     case "idle":
-      return MAGENTA;
+      return BLUE;
   }
 }

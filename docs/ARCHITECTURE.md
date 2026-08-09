@@ -119,7 +119,7 @@ This keeps command parsing independent from model/tool behavior.
 1. `runOpenAICompatibleAiTui` calls `maybeRunProviderSetup`.
 2. Provider setup resolves model, endpoint, key, approval mode, and optional markdown instruction files.
 3. `patchAiSdkTuiRenderer` patches upstream `@ai-sdk/tui` before importing it. The dynamic import is required because the patch edits the installed dependency before module evaluation.
-4. The renderer patch changes message labels, viewport chrome, progress footer, scroll bar, code fences, and tool output. Every tool call renders through one compact action frame; edit tools use `✎ Edit: 🟦 path ⟦+N/-M⟧` plus a bounded line diff.
+4. The renderer patch changes message labels, viewport chrome, progress footer, scroll bar, code fences, and tool output. Every tool call renders through one OMP-style rounded action frame; edit tools use `╭─ ✎ Edit: 🟦 path ─ ⟦+N/-M⟧` plus a bounded line diff.
 5. `createSlashCommandAgent` wraps the shared coding agent with local slash-command handling.
 6. `runFullscreen` enters alternate screen mode.
 7. `runAgentTUI` renders messages, tool cards, reasoning, progress, approvals, and response statistics.

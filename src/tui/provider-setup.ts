@@ -1,6 +1,6 @@
 import type { ApprovalMode } from "../ai/ai-tools.js";
 import type { OpenAICompatibleCodingAgentOptions } from "../ai/coding-agent.js";
-import { clipAnsi, renderActivityPulse, renderMetricStrip, renderProgressSteps, renderStatusBar, visibleLength } from "./status-bar.js";
+import { clipAnsi, renderActivityPulse, renderGradientText, renderMetricStrip, renderProgressSteps, renderStatusBar, visibleLength } from "./status-bar.js";
 
 const ESC = "\x1B";
 const ENTER_ALT_SCREEN = `${ESC}[?1049h${ESC}[?25l`;
@@ -13,7 +13,7 @@ const CYAN = `${ESC}[36m`;
 const GREEN = `${ESC}[32m`;
 const YELLOW = `${ESC}[33m`;
 const BLUE = `${ESC}[34m`;
-const MAGENTA = `${ESC}[35m`;
+const ACCENT_BLUE = `${ESC}[94m`;
 
 const FIELDS = ["model", "baseURL", "apiKey", "approvalMode", "agentMdPath", "skillsMdPath"] as const;
 const FIELD_LABELS: Record<ProviderSetupField, string> = {
@@ -285,8 +285,8 @@ export function renderProviderSetupScreen(state: ProviderSetupState, width: numb
   const connectionState = state.values.baseURL.trim().length === 0 ? "OpenAI default" : "custom /v1";
   const docsState = [state.values.agentMdPath, state.values.skillsMdPath].filter((value) => value.trim().length > 0).length;
   const rows = [
-    topBorder(safeWidth, " Harness AI cockpit "),
-    framedLine(`${BOLD}${CYAN}Oh My Pi style setup${RESET} ${DIM}segmented status, keyboard-first controls, live validation${RESET}`, contentWidth),
+    topBorder(safeWidth, ` ${renderGradientText("Harness AI · Oh My Pi cockpit", frame / 24)} `),
+    framedLine(`${renderGradientText("Modern five-tool workspace", frame / 30)} ${DIM}rounded cards · profile chips · stage rail · live validation${RESET}`, contentWidth),
     framedLine(renderMetricStrip([
       { label: "model", value: state.values.model.trim().length === 0 ? "unset" : state.values.model.trim(), tone: "busy" },
       { label: "endpoint", value: connectionState, tone: connectionState === "custom /v1" ? "success" : "idle" },
@@ -294,13 +294,14 @@ export function renderProviderSetupScreen(state: ProviderSetupState, width: numb
       { label: "docs", value: `${docsState}/2`, tone: docsState === 0 ? "idle" : "success" },
     ], contentWidth), contentWidth),
     framedLine(renderProgressSteps(FIELDS.map((field) => FIELD_LABELS[field]), state.activeField, contentWidth), contentWidth),
-    framedLine(renderActivityPulse("Setup", "Live keyboard navigation. Presets and validation update instantly.", contentWidth, frame, "busy"), contentWidth),
+    framedLine(renderActivityPulse("OMP cockpit", "Keyboard-first setup with animated state, shortcuts, and compact cards.", contentWidth, frame, "busy"), contentWidth),
     framedLine("", contentWidth),
-    renderSectionTitle("Connection", contentWidth),
+    renderSectionTitle("Profile cards", contentWidth),
     ...FIELDS.slice(0, 4).flatMap((field, index) => renderFieldRows(state, field, index, contentWidth, frame)),
     renderSectionTitle("Workspace context", contentWidth),
     ...FIELDS.slice(4).flatMap((field, offset) => renderFieldRows(state, field, offset + 4, contentWidth, frame)),
     framedLine("", contentWidth),
+    renderSectionTitle("Command deck", contentWidth),
     framedLine(renderShortcutRow(["Tab/↓ next", "↑ previous", "Enter next/start", "Ctrl+S start"], contentWidth), contentWidth),
     framedLine(renderShortcutRow(["Ctrl+O Ollama", "Ctrl+A auto approval", "Ctrl+D OpenAI", "Ctrl+U clear", "Esc cancel"], contentWidth), contentWidth),
     framedLine("", contentWidth),
@@ -373,8 +374,8 @@ function normalizedApprovalMode(value: string | undefined, fallback: ApprovalMod
 }
 
 function topBorder(width: number, title: string): string {
-  const remaining = Math.max(0, width - 2 - title.length);
-  return `╭${title}${"─".repeat(remaining)}╮`;
+  const remaining = Math.max(0, width - 2 - visibleLength(title));
+  return `╭${title}${DIM}${"─".repeat(remaining)}${RESET}╮`;
 }
 
 function bottomBorder(width: number): string {
@@ -388,7 +389,7 @@ function framedLine(text: string, width: number): string {
 }
 
 function activeMarker(frame: number): string {
-  return frame % 2 === 0 ? `${GREEN}◆${RESET}` : `${MAGENTA}◆${RESET}`;
+  return frame % 2 === 0 ? `${GREEN}◆${RESET}` : `${ACCENT_BLUE}◆${RESET}`;
 }
 
 function renderSectionTitle(title: string, width: number): string {
@@ -398,7 +399,7 @@ function renderSectionTitle(title: string, width: number): string {
 }
 
 function renderPill(label: string, value: string): string {
-  return `${DIM}${label}${RESET} ${MAGENTA}${BOLD}${value}${RESET}`;
+  return `${DIM}${label}${RESET} ${ACCENT_BLUE}${BOLD}${value}${RESET}`;
 }
 
 function renderShortcutRow(shortcuts: readonly string[], width: number): string {
