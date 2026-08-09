@@ -140,7 +140,7 @@ npm run tui -- \
   --ui-density compact
 ```
 
-The TUI title shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title. Override it if your model has a different context window.
+The TUI opens a rich provider setup screen when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, and API key before the chat starts. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
 
 UI density presets:
 
@@ -154,6 +154,30 @@ Override a preset when needed:
 
 ```bash
 npm run tui -- --ui-density compact --tool-display auto-collapsed
+```
+
+Provider setup controls:
+
+| Key | Action |
+| --- | --- |
+| `Tab` / `↓` | Move to the next field. |
+| `↑` | Move to the previous field. |
+| `Enter` | Move next, or start from the API key field. |
+| `Ctrl+S` | Start the TUI with the current values. |
+| `Ctrl+O` | Fill Ollama defaults: `qwen2.5-coder:7b`, `http://localhost:11434/v1`, `ollama`. |
+| `Ctrl+D` | Use the default OpenAI endpoint by clearing server URL and API key. |
+| `Ctrl+U` | Clear the active field. |
+
+Force the setup screen even when values are already supplied:
+
+```bash
+npm run tui -- --setup
+```
+
+Skip it:
+
+```bash
+npm run tui -- --no-setup
 ```
 
 TUI slash commands run locally and do not spend an LLM call:
@@ -284,6 +308,8 @@ Options:
 --ui-density <mode>          UI preset: compact|normal|debug. Default: compact.
 --tool-display <mode>        Override tool cards: full|collapsed|auto-collapsed|hidden.
 --reasoning-display <mode>   Override reasoning: full|collapsed|auto-collapsed|hidden.
+--setup                     Always open the rich provider setup UI before chat.
+--no-setup                  Skip the provider setup UI.
 -h, --help                   Show help.
 ```
 

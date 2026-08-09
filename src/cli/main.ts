@@ -37,6 +37,7 @@ type TuiCommandOptions = SharedAgentCommandOptions & {
   readonly uiDensity: string;
   readonly toolDisplay?: string;
   readonly reasoningDisplay?: string;
+  readonly setup?: boolean;
 };
 
 const UI_DENSITY_PRESETS: Record<UiDensity, {
@@ -89,6 +90,7 @@ addTuiOptions(
     contextSize: parseOptionalPositiveInteger(options.contextSize, "--context-size"),
     toolDisplay: display.toolDisplay,
     reasoningDisplay: display.reasoningDisplay,
+    providerSetupMode: options.setup === false ? "never" : options.setup === true ? "always" : "auto",
   });
 });
 
@@ -112,7 +114,9 @@ function addTuiOptions(command: Command): Command {
     .option("--context-size <tokens>", "show context usage percentage in the TUI title", DEFAULT_TUI_CONTEXT_SIZE)
     .option("--ui-density <mode>", `UI preset: ${UI_DENSITY_VALUES.join("|")}`, DEFAULT_UI_DENSITY)
     .option("--tool-display <mode>", `override tool display: ${displayModes}`)
-    .option("--reasoning-display <mode>", `override reasoning display: ${displayModes}`);
+    .option("--reasoning-display <mode>", `override reasoning display: ${displayModes}`)
+    .option("--setup", "open the rich provider setup UI before the TUI")
+    .option("--no-setup", "skip the provider setup UI");
 }
 
 function toRuntimeOptions(options: SharedAgentCommandOptions) {

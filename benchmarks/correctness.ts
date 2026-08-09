@@ -4,6 +4,7 @@ import { createHarness, type ReadOutput, type SearchOutput, type BashOutput } fr
 import { JsonConsoleLogger } from "../src/core/logger.js";
 import type { ToolResult } from "../src/core/registry.js";
 import { createSlashCommandAgent } from "../src/tui/slash-agent.js";
+import { renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
 
 const workspace = join(process.cwd(), ".correctness-workspace");
 
@@ -184,6 +185,26 @@ async function main(): Promise<void> {
 
   const compactText = await collectSlashText(slashAgent, "/compact");
   results.push(recordCheck("slash compact returns local confirmation", compactText.includes("Context compacted")));
+
+  const setupOptions = resolveProviderSetupOptions({ cwd: workspace, model: "gpt-4o-mini", baseURL: undefined, apiKey: "old" }, {
+    model: "qwen2.5-coder:7b",
+    baseURL: " http://localhost:11434/v1 ",
+    apiKey: " ollama ",
+  });
+  results.push(recordCheck(
+    "provider setup resolves LLM config",
+    setupOptions.model === "qwen2.5-coder:7b" && setupOptions.baseURL === "http://localhost:11434/v1" && setupOptions.apiKey === "ollama",
+  ));
+
+  const setupScreen = renderProviderSetupScreen({
+    activeField: 1,
+    values: { model: "qwen2.5-coder:7b", baseURL: "http://localhost:11434/v1", apiKey: "ollama" },
+    message: "Ready",
+  }, 88);
+  results.push(recordCheck(
+    "provider setup renders rich fields",
+    setupScreen.includes("Provider setup") && setupScreen.includes("Server URL") && setupScreen.includes("API key") && setupScreen.includes("Ctrl+O"),
+  ));
 
   const passed = results.filter((result) => result.passed).length;
   console.log(JSON.stringify({
