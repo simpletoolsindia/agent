@@ -3,7 +3,7 @@ import { Command } from "commander";
 import type { ApprovalMode } from "../ai/ai-tools.js";
 import { runOpenAICompatibleAi } from "../ai/openai-compatible-ai.js";
 import { runOpenAICompatibleAiTui } from "../tui/ai-tui.js";
-import { renderActivityPulse, renderCliPanel, renderCliSplash } from "../tui/status-bar.js";
+import { renderActivityPulse, renderCliPanel, renderCliSplash, renderProgressSteps } from "../tui/status-bar.js";
 import { formatSessionList, listSessions } from "../tui/session-store.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
@@ -92,7 +92,8 @@ addSharedAgentOptions(
 
   process.stdout.write(`${result.text}\n`);
   if (process.stdout.isTTY) {
-    process.stdout.write(`\n${renderCliPanel("Run complete", [
+    process.stdout.write(`\n${renderCliPanel("Run complete · OMP-style flow", [
+      renderProgressSteps(["prompt", "think", "tools", "answer"], 3, process.stdout.columns ?? 88),
       "Agent response finished. Use `harness tui` for approvals, live tools, and animated progress.",
       "Next shortcuts: `--auto-approve`, `--agent-md AGENT.md`, `--skills-md SKILLS.md`.",
     ], process.stdout.columns ?? 88)}\n`);

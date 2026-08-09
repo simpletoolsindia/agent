@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v2 */";
 
 /** Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks. */
 export async function patchAiSdkTuiRenderer(): Promise<void> {
@@ -12,26 +12,35 @@ export async function patchAiSdkTuiRenderer(): Promise<void> {
     return;
   }
 
-  let patched = `${PATCH_MARKER}\n${source}`;
-  patched = replaceOnce(patched, originalRenderMarkdown(), patchedRenderMarkdown());
-  patched = replaceOnce(
-    patched,
-    'topBorder(width, state.inputActive ? "Input" : "Status"),',
-    'topBorder(width, state.inputActive ? "Chat prompt" : "Progress"),',
-  );
-  patched = replaceOnce(
-    patched,
-    'state.inputActive ? `> ${state.input}${state.inputCursorVisible === false ? " " : "\\u2588"}` : (_a = state.status) != null ? _a : "Streaming... \\u2191/\\u2193 scroll \\xB7 Ctrl+C quit",',
-    'state.inputActive ? `› ${state.input}${state.inputCursorVisible === false ? " " : "\\u2588"}` : renderViewportProgress((_a = state.status) != null ? _a : "Streaming... \\u2191/\\u2193 scroll \\xB7 Ctrl+C quit", width),',
-  );
-  patched = replaceOnce(patched, originalBoxLine(), patchedBoxLine());
-  patched = replaceOnce(
-    patched,
-    "  return visibleLines;\n};\nclampScrollOffset_fn = function(scrollOffset) {",
-    addScrollBarPatch(),
-  );
+  const alreadyPatched = source.includes("harness-tools rich tui patch");
+  let patched = source.replace(/\/\* harness-tools rich tui patch(?: v\d+)? \*\/\n?/g, "");
+  if (!alreadyPatched) {
+    patched = replaceOnce(patched, originalRenderMarkdown(), patchedRenderMarkdown());
+    patched = replaceOnce(
+      patched,
+      'topBorder(width, state.inputActive ? "Input" : "Status"),',
+      'topBorder(width, state.inputActive ? "Chat prompt" : "Progress"),',
+    );
+    patched = replaceOnce(
+      patched,
+      'state.inputActive ? `> ${state.input}${state.inputCursorVisible === false ? " " : "\\u2588"}` : (_a = state.status) != null ? _a : "Streaming... \\u2191/\\u2193 scroll \\xB7 Ctrl+C quit",',
+      'state.inputActive ? `› ${state.input}${state.inputCursorVisible === false ? " " : "\\u2588"}` : renderViewportProgress((_a = state.status) != null ? _a : "Streaming... \\u2191/\\u2193 scroll \\xB7 Ctrl+C quit", width),',
+    );
+    patched = replaceOnce(patched, originalBoxLine(), patchedBoxLine());
+    patched = replaceOnce(
+      patched,
+      "  return visibleLines;\n};\nclampScrollOffset_fn = function(scrollOffset) {",
+      addScrollBarPatch(),
+    );
+  }
 
-  await writeFile(path, patched, "utf8");
+  patched = replaceIfPresent(patched, originalTopBorder(), patchedTopBorder());
+  patched = replaceIfPresent(patched, originalBottomBorder(), patchedBottomBorder());
+  patched = patched
+    .replace('{ kind: "user", title: "User", content: prompt }', '{ kind: "user", title: "You", content: prompt }')
+    .replace('title: "Assistant",', 'title: "Assistant · reply",')
+    .replace('title: "Reasoning",', 'title: "Thinking",');
+  await writeFile(path, `${PATCH_MARKER}\n${patched}`, "utf8");
 }
 
 function replaceOnce(source: string, search: string, replacement: string): string {
@@ -39,6 +48,10 @@ function replaceOnce(source: string, search: string, replacement: string): strin
     throw new Error("@ai-sdk/tui renderer patch failed: upstream source changed");
   }
   return source.replace(search, replacement);
+}
+
+function replaceIfPresent(source: string, search: string, replacement: string): string {
+  return source.includes(search) ? source.replace(search, replacement) : source;
 }
 
 function originalRenderMarkdown(): string {
@@ -90,6 +103,58 @@ function patchedRenderMarkdown(): string {
     "    output.push(renderMarkdownLine(line));",
     "  }",
     "  return output.join(\"\\n\");",
+    "}",
+  ].join("\n");
+}
+
+function originalTopBorder(): string {
+  return [
+    "function topBorder(width, title, rightTitle) {",
+    "  const contentWidth = Math.max(0, width - 2);",
+    "  const label = title ? sliceVisible(` ${title} `, contentWidth) : \"\";",
+    "  const rightLabel = rightTitle ? sliceVisible(",
+    "    ` ${rightTitle} `,",
+    "    Math.max(0, contentWidth - visibleLength(label))",
+    "  ) : \"\";",
+    "  const remaining = Math.max(",
+    "    0,",
+    "    contentWidth - visibleLength(label) - visibleLength(rightLabel)",
+    "  );",
+    "  return `\\u250C${label}${horizontal.repeat(remaining)}${rightLabel}\\u2510`;",
+    "}",
+  ].join("\n");
+}
+
+function patchedTopBorder(): string {
+  return [
+    "function topBorder(width, title, rightTitle) {",
+    "  const contentWidth = Math.max(0, width - 2);",
+    "  const label = title ? sliceVisible(` ${title} `, contentWidth) : \"\";",
+    "  const rightLabel = rightTitle ? sliceVisible(",
+    "    ` ${rightTitle} `,",
+    "    Math.max(0, contentWidth - visibleLength(label))",
+    "  ) : \"\";",
+    "  const remaining = Math.max(",
+    "    0,",
+    "    contentWidth - visibleLength(label) - visibleLength(rightLabel)",
+    "  );",
+    "  return `${colors.dim}\\u256D${colors.reset}${colors.tool}${label}${colors.reset}${colors.dim}${horizontal.repeat(remaining)}${colors.reset}${colors.tool}${rightLabel}${colors.reset}${colors.dim}\\u256E${colors.reset}`;",
+    "}",
+  ].join("\n");
+}
+
+function originalBottomBorder(): string {
+  return [
+    "function bottomBorder(width) {",
+    "  return `\\u2514${horizontal.repeat(width - 2)}\\u2518`;",
+    "}",
+  ].join("\n");
+}
+
+function patchedBottomBorder(): string {
+  return [
+    "function bottomBorder(width) {",
+    "  return `${colors.dim}\\u2570${horizontal.repeat(width - 2)}\\u256F${colors.reset}`;",
     "}",
   ].join("\n");
 }

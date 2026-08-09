@@ -11,7 +11,7 @@ import {
   type OpenAICompatibleCodingAgent,
   type OpenAICompatibleCodingAgentOptions,
 } from "../ai/coding-agent.js";
-import { renderActivityPulse, renderCliPanel, renderStatusBar } from "./status-bar.js";
+import { renderActivityPulse, renderCliPanel, renderKeyValueDeck, renderMetricStrip, renderProgressSteps, renderStatusBar } from "./status-bar.js";
 import { formatSessionList, listSessions, loadSession, saveSession } from "./session-store.js";
 
 const SETTINGS_KEYS = ["model", "base-url", "api-key", "provider-name", "approval", "agent-md", "skills-md"] as const;
@@ -396,21 +396,28 @@ function parseSettingsKey(value: string): SettingsKey | undefined {
 }
 
 function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, compactRuns: number): string {
+  const docsLoaded = [settings.agentMdPath, settings.skillsMdPath].filter((value) => value !== undefined).length;
   return [
     "## Settings cockpit",
     "",
-    "Quick actions:",
+    renderKeyValueDeck("Active profile", [
+      { label: "model", value: settings.model, tone: "busy" },
+      { label: "endpoint", value: settings.baseURL ?? "OpenAI default", tone: settings.baseURL === undefined ? "idle" : "success" },
+      { label: "approval", value: settings.approvalMode ?? "safe", tone: (settings.approvalMode ?? "safe") === "auto" ? "success" : "warn" },
+      { label: "docs", value: `${docsLoaded}/2`, tone: docsLoaded === 0 ? "idle" : "success" },
+      { label: "compact", value: compactEnabled ? `${compactRuns}` : "off", tone: compactEnabled ? "success" : "idle" },
+    ], 78),
     "",
-    "- `/settings ollama` applies local Ollama defaults in one command.",
-    "- `/settings auto` turns on auto approval for trusted workspaces.",
-    "- `/settings safe` restores approval prompts.",
-    "- `/settings openai` clears the custom endpoint and uses OpenAI defaults.",
-    "- `/settings menu` shows this cockpit. `/settings help` shows commands only.",
+    renderCliPanel("Quick actions", [
+      "`/settings ollama`  Local Ollama defaults in one command.",
+      "`/settings auto`  Auto approval for trusted workspaces.",
+      "`/settings safe`  Restore approval prompts.",
+      "`/settings openai`  Clear custom endpoint and key.",
+      "`/settings help`  Show command-only reference.",
+    ], 78),
     "",
-    "Active profile:",
-    "",
-    `| Setting | Value |`,
-    `| --- | --- |`,
+    "| Setting | Value |",
+    "| --- | --- |",
     `| model | ${settings.model} |`,
     `| base-url | ${settings.baseURL ?? "default OpenAI endpoint"} |`,
     `| api-key | ${settings.apiKey === undefined ? "unset" : "set"} |`,
@@ -419,8 +426,6 @@ function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, comp
     `| agent-md | ${settings.agentMdPath ?? "unset"} |`,
     `| skills-md | ${settings.skillsMdPath ?? "unset"} |`,
     `| compact | ${compactEnabled ? `enabled (${compactRuns})` : "not yet run"} |`,
-    "",
-    "Common changes:",
     "",
     "```txt",
     "/settings ollama",
@@ -462,12 +467,13 @@ function slashHelpText(settings: RuntimeSettings, compactEnabled: boolean, compa
     "## Command center",
     "",
     renderCliPanel("Slash deck", [
-      "`/settings menu`  Modern setup cockpit, active config, and examples.",
+      "`/settings menu`  OMP-style cockpit with segmented profile and examples.",
       "`/settings ollama`  Local Ollama in one command.",
       "`/settings auto`  Reduce approval friction in trusted workspaces.",
       "`/compact`  Prune old slash chatter and tool-heavy history.",
       "`/sessions`  List the five saved resumable sessions.",
       "`/agents`  Show read-only subagent delegation modes.",
+      renderProgressSteps(["configure", "chat", "tools", "verify"], 1, 74),
     ], 78),
     "",
     formatSettings(settings, compactEnabled, compactRuns),
@@ -479,6 +485,11 @@ function agentsHelpText(): string {
     "## Built-in subagents",
     "",
     renderCliPanel("Read-only delegation", [
+      renderMetricStrip([
+        { label: "research", value: "map code", tone: "busy" },
+        { label: "review", value: "find regressions", tone: "warn" },
+        { label: "plan", value: "no edits", tone: "idle" },
+      ], 74),
       "`research` maps unfamiliar code or collects references before an edit.",
       "`review` checks a proposed change for regressions and missing verification.",
       "`plan` creates a non-mutating implementation plan for larger work.",
@@ -768,7 +779,7 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: renderActivityPulse(`Step ${step}`, `Thinking. ${pickRuntimeSuggestion(suggestionIndex)}`, 72, step, "busy"),
+        text: `${renderProgressSteps(["think", "tools", "review", "answer"], 0, 72)}\n${renderActivityPulse(`Step ${step}`, `Thinking. ${pickRuntimeSuggestion(suggestionIndex)}`, 72, step, "busy")}`,
       };
       continue;
     }
@@ -783,7 +794,7 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: `\n${renderStatusBar("Tool", `${parallelPrefix(activeToolCalls.size)}${toolName} input streaming. ${toolSuggestion(toolName)}`, 72, "busy", 0.45)}`,
+        text: `\n${renderProgressSteps(["think", "tools", "review", "answer"], 1, 72)}\n${renderStatusBar("Tool", `${parallelPrefix(activeToolCalls.size)}${toolName} input streaming. ${toolSuggestion(toolName)}`, 72, "busy", 0.45)}`,
       };
     }
 
@@ -796,7 +807,7 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: `\n${renderStatusBar("Tool", `${parallelPrefix(activeToolCalls.size)}${toolRunMessage(toolName, record)}`, 72, "busy", 0.65)}`,
+        text: `\n${renderProgressSteps(["think", "tools", "review", "answer"], 1, 72)}\n${renderStatusBar("Tool", `${parallelPrefix(activeToolCalls.size)}${toolRunMessage(toolName, record)}`, 72, "busy", 0.65)}`,
       };
     }
 
@@ -810,7 +821,7 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: `\n${renderStatusBar("Tool", `${toolName} ${failed ? "needs attention" : "complete"}.`, 72, failed ? "warn" : "success", failed ? 0.4 : 1)}`,
+        text: `\n${renderProgressSteps(["think", "tools", "review", "answer"], failed ? 2 : 3, 72)}\n${renderStatusBar("Tool", `${toolName} ${failed ? "needs attention" : "complete"}.`, 72, failed ? "warn" : "success", failed ? 0.4 : 1)}`,
       };
     }
 
@@ -818,7 +829,7 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: `\n${renderStatusBar(`Step ${step}`, "Step complete.", 72, "success", 1)}`,
+        text: `\n${renderProgressSteps(["think", "tools", "review", "answer"], 3, 72)}\n${renderStatusBar(`Step ${step}`, "Step complete.", 72, "success", 1)}`,
       };
       yield { type: "reasoning-end", id: currentStatusId };
       currentStatusId = undefined;

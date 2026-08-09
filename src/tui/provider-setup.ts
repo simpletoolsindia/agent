@@ -1,6 +1,6 @@
 import type { ApprovalMode } from "../ai/ai-tools.js";
 import type { OpenAICompatibleCodingAgentOptions } from "../ai/coding-agent.js";
-import { clipAnsi, renderActivityPulse, renderStatusBar, visibleLength } from "./status-bar.js";
+import { clipAnsi, renderActivityPulse, renderMetricStrip, renderProgressSteps, renderStatusBar, visibleLength } from "./status-bar.js";
 
 const ESC = "\x1B";
 const ENTER_ALT_SCREEN = `${ESC}[?1049h${ESC}[?25l`;
@@ -282,10 +282,18 @@ export function renderProviderSetupScreen(state: ProviderSetupState, width: numb
   const contentWidth = safeWidth - 4;
   const frame = state.frame ?? 0;
   const approval = normalizedApprovalMode(state.values.approvalMode, "safe") ?? "safe";
+  const connectionState = state.values.baseURL.trim().length === 0 ? "OpenAI default" : "custom /v1";
+  const docsState = [state.values.agentMdPath, state.values.skillsMdPath].filter((value) => value.trim().length > 0).length;
   const rows = [
-    topBorder(safeWidth, " Provider setup "),
-    framedLine(`${BOLD}${CYAN}Harness AI cockpit${RESET} ${DIM}modern setup for model, safety, and workspace context${RESET}`, contentWidth),
-    framedLine(`${renderPill("model", state.values.model.trim().length === 0 ? "unset" : state.values.model.trim())} ${renderPill("approval", approval)} ${renderPill("endpoint", state.values.baseURL.trim().length === 0 ? "OpenAI default" : "custom")}`, contentWidth),
+    topBorder(safeWidth, " Harness AI cockpit "),
+    framedLine(`${BOLD}${CYAN}Oh My Pi style setup${RESET} ${DIM}segmented status, keyboard-first controls, live validation${RESET}`, contentWidth),
+    framedLine(renderMetricStrip([
+      { label: "model", value: state.values.model.trim().length === 0 ? "unset" : state.values.model.trim(), tone: "busy" },
+      { label: "endpoint", value: connectionState, tone: connectionState === "custom /v1" ? "success" : "idle" },
+      { label: "approval", value: approval, tone: approval === "auto" ? "success" : "warn" },
+      { label: "docs", value: `${docsState}/2`, tone: docsState === 0 ? "idle" : "success" },
+    ], contentWidth), contentWidth),
+    framedLine(renderProgressSteps(FIELDS.map((field) => FIELD_LABELS[field]), state.activeField, contentWidth), contentWidth),
     framedLine(renderActivityPulse("Setup", "Live keyboard navigation. Presets and validation update instantly.", contentWidth, frame, "busy"), contentWidth),
     framedLine("", contentWidth),
     renderSectionTitle("Connection", contentWidth),

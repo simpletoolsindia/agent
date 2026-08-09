@@ -7,7 +7,7 @@ import { createSlashCommandAgent, pickRuntimeSuggestion, withInlineProgress } fr
 import { reduceProviderSetupInput, renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
 import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
-import { renderActivityPulse, renderCliSplash, renderStatusBar, visibleLength } from "../src/tui/status-bar.js";
+import { renderActivityPulse, renderCliSplash, renderMetricStrip, renderProgressSteps, renderStatusBar, visibleLength } from "../src/tui/status-bar.js";
 
 const workspace = join(process.cwd(), ".correctness-workspace");
 
@@ -294,12 +294,13 @@ async function main(): Promise<void> {
     message: "Ready",
   }, 88);
   results.push(recordCheck(
-    "provider setup renders modern rich fields",
-    setupScreen.includes("Provider setup")
+    "provider setup renders OMP-style rich fields",
+    setupScreen.includes("Oh My Pi style setup")
       && setupScreen.includes("Harness AI cockpit")
+      && setupScreen.includes("endpoint")
+      && setupScreen.includes("docs")
       && setupScreen.includes("Connection")
       && setupScreen.includes("Workspace context")
-      && setupScreen.includes("Approval mode")
       && setupScreen.includes("Ctrl+A"),
   ));
 
@@ -349,14 +350,27 @@ async function main(): Promise<void> {
     "rich CLI panels render animated affordances",
     activityPulse.includes("⠹")
       && activityPulse.includes("AI running")
-      && cliSplash.includes("Harness AI")
-      && cliSplash.includes("Five-tool coding cockpit"),
+      && cliSplash.includes("Harness AI · rich cockpit")
+      && cliSplash.includes("parallel search/read/bash")
+      && cliSplash.includes("◆ prompt"),
+  ));
+
+  const metricStrip = renderMetricStrip([{ label: "model", value: "qwen", tone: "busy" }, { label: "approval", value: "auto", tone: "success" }], 48);
+  const progressSteps = renderProgressSteps(["think", "tools", "answer"], 1, 48);
+  results.push(recordCheck(
+    "shared rich primitives render segmented OMP-like UI",
+    metricStrip.includes("model")
+      && metricStrip.includes("approval")
+      && progressSteps.includes("◆ tools")
+      && visibleLength(progressSteps) <= 48,
   ));
 
   const progressParts = await collectInlineProgressText();
   results.push(recordCheck(
     "agent stream adds inline progress and tool suggestions",
     progressParts.includes("Step 1")
+      && progressParts.includes("◆ think")
+      && progressParts.includes("◆ tools")
       && progressParts.includes("Tip:")
       && progressParts.includes("search running")
       && progressParts.includes("parallel x2: bash running: npm run build")

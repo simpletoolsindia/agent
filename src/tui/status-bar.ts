@@ -3,6 +3,7 @@ const ESC = "\x1B";
 const GREEN = `${ESC}[32m`;
 const YELLOW = `${ESC}[33m`;
 const CYAN = `${ESC}[36m`;
+const BLUE = `${ESC}[34m`;
 const MAGENTA = `${ESC}[35m`;
 const DIM = `${ESC}[2m`;
 const BOLD = `${ESC}[1m`;
@@ -10,6 +11,7 @@ const RESET = `${ESC}[0m`;
 
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 export const RICH_UI = {
+  blue: BLUE,
   green: GREEN,
   yellow: YELLOW,
   cyan: CYAN,
@@ -20,6 +22,12 @@ export const RICH_UI = {
 } as const;
 
 export type StatusTone = "idle" | "busy" | "success" | "warn";
+export type StatusMetric = {
+  readonly label: string;
+  readonly value: string;
+  readonly tone?: StatusTone;
+};
+
 
 export function renderStatusBar(label: string, message: string, width: number, tone: StatusTone = "idle", progress?: number): string {
   const safeWidth = Math.max(20, width);
@@ -50,10 +58,43 @@ export function renderCliPanel(title: string, rows: readonly string[], width: nu
 }
 
 export function renderCliSplash(model: string, cwd: string, approvalMode: string, width: number = 88): string {
-  return renderCliPanel("Harness AI", [
-    `${CYAN}${BOLD}Five-tool coding cockpit${RESET} ${DIM}search · read · update · write · bash${RESET}`,
-    `${DIM}model${RESET} ${model}  ${DIM}approval${RESET} ${approvalMode}  ${DIM}workspace${RESET} ${cwd}`,
+  return renderCliPanel("Harness AI · rich cockpit", [
+    `${CYAN}${BOLD}Five-tool coding cockpit${RESET} ${DIM}parallel search/read/bash · guarded write/update · resumable TUI${RESET}`,
+    renderMetricStrip([
+      { label: "model", value: model, tone: "busy" },
+      { label: "approval", value: approvalMode, tone: approvalMode === "auto" ? "success" : "warn" },
+      { label: "workspace", value: cwd, tone: "idle" },
+    ], width - 4),
+    renderProgressSteps(["prompt", "think", "tools", "verify", "done"], 0, width - 4),
     renderStatusBar("Ready", "Prompt accepted. Streaming agent work with live suggestions.", width - 4, "idle", 0.1),
+  ], width);
+}
+
+export function renderMetricStrip(metrics: readonly StatusMetric[], width: number): string {
+  const safeWidth = Math.max(20, width);
+  const rendered = metrics.map((metric) => {
+    const color = toneColor(metric.tone ?? "idle");
+    return `${DIM}${metric.label}${RESET} ${color}${BOLD}${metric.value}${RESET}`;
+  }).join(`${DIM}  │  ${RESET}`);
+  return clipAnsi(rendered, safeWidth);
+}
+
+export function renderProgressSteps(steps: readonly string[], activeIndex: number, width: number): string {
+  const safeWidth = Math.max(20, width);
+  const active = Math.max(0, Math.min(Math.max(0, steps.length - 1), Math.trunc(activeIndex)));
+  const rendered = steps.map((step, index) => {
+    const color = index < active ? GREEN : index === active ? CYAN : DIM;
+    const marker = index < active ? "●" : index === active ? "◆" : "○";
+    return `${color}${marker} ${step}${RESET}`;
+  }).join(`${DIM} ─ ${RESET}`);
+  return clipAnsi(rendered, safeWidth);
+}
+
+export function renderKeyValueDeck(title: string, metrics: readonly StatusMetric[], width: number): string {
+  const active = metrics.findIndex((metric) => (metric.tone ?? "idle") === "busy");
+  return renderCliPanel(title, [
+    renderMetricStrip(metrics, width - 4),
+    renderProgressSteps(metrics.map((metric) => metric.label), active === -1 ? 0 : active, width - 4),
   ], width);
 }
 

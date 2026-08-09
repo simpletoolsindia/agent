@@ -162,7 +162,7 @@ npm run tui -- \
   --ui-density compact
 ```
 
-The one-shot CLI shows a rich cockpit header on interactive terminals, then animates an in-place `AI running` status line with practical usage suggestions until the response is ready. The TUI opens a modern setup cockpit when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, approval mode, `agent.md`, and `skills.md` before the chat starts. The screen groups connection and workspace context fields, shows active profile chips, animates the active field marker, and keeps status/progress bounded so setup messages do not overlap narrow terminals. During model/tool work the TUI shows streamed reasoning, inline tool progress, `bash` command status, parallel tool counts, scroll hints, and rotating usage suggestions such as when to use `search`, `read`, `update`, `write`, `bash`, `/settings`, `/agents`, `/sessions`, and `/compact`. The title then shows the workspace, model, approval mode, context usage, and slash-command hints. `--context-size` defaults to `32768`.
+The one-shot CLI now follows the Oh My Pi cockpit style: rounded panels, segmented metric strips, stage timelines, and animated `AI running` status. The TUI opens an OMP-inspired setup cockpit when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, approval mode, `agent.md`, and `skills.md` before the chat starts. The setup screen groups connection and workspace fields, shows active profile chips, docs count, keyboard shortcuts, a live spinner, and bounded status/progress rows for narrow terminals. During model/tool work the chat UI shows rounded message cards, `You` / `Assistant · reply` / `Thinking` labels, streamed reasoning, inline tool progress, `bash` command status, parallel tool counts, scroll hints, stage timelines, and rotating usage suggestions such as when to use `search`, `read`, `update`, `write`, `bash`, `/settings`, `/agents`, `/sessions`, and `/compact`. The title uses a compact status-line style with workspace, model, approval mode, context usage, and slash-command hints. `--context-size` defaults to `32768`.
 
 UI density presets:
 
@@ -406,6 +406,7 @@ CLI and TUI use the same `ToolLoopAgent` setup:
 - repository context comes from `search` and `read`; the agent is instructed not to run git commands just to provide context to the LLM
 - optional `--agent-md <path>` and `--skills-md <path>` append workspace markdown instructions to the agent prompt
 - independent `subagent`, `search`, `read`, and `bash` calls are issued in the same model step when possible so the AI SDK executes them in parallel; `write` and `update` stay serialized when they touch the same file
+- the TUI renderer patch makes upstream `@ai-sdk/tui` look closer to Oh My Pi: rounded viewport chrome, renamed chat sections, richer code fences, scrollbar, and progress footer
 - `write` and `update` return compact diff summaries plus best-effort LSP diagnostics for edited files
 
 `bash` accepts one shell command string and runs it in the selected workspace:
