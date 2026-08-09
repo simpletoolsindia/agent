@@ -339,6 +339,17 @@ async function main(): Promise<void> {
       && emptyTodo.fallback === true
       && emptyTodo.current === "Todo: Continue requested work",
   ));
+  const readme = await readFile("README.md", "utf8");
+  const architecture = await readFile("docs/ARCHITECTURE.md", "utf8");
+  results.push(recordCheck(
+    "todo fallback is documented for maintainers and users",
+    readme.includes("resilient todo fallback")
+      && readme.includes("Visible todo cards")
+      && architecture.includes("Visible todo helper")
+      && architecture.includes("Normalize at the adapter boundary")
+      && architecture.includes("AI-loop helpers may be permissive"),
+  ));
+
 
 
   const contextInstructions = createCodingInstructions(workspace, loadInstructionDocuments(workspace, {

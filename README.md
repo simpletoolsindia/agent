@@ -1,6 +1,8 @@
 # Agent
 
-A TypeScript coding-agent prototype with exactly five workspace tools:
+A TypeScript coding-agent prototype with exactly five workspace tools and two AI-loop helpers.
+
+Workspace tools:
 
 | Tool | Purpose |
 | --- | --- |
@@ -9,6 +11,13 @@ A TypeScript coding-agent prototype with exactly five workspace tools:
 | `write` | Create or replace a file atomically. |
 | `update` | Edit exact line ranges with file-hash and range-hash checks. |
 | `bash` | Run one focused, non-interactive shell command. |
+
+AI-loop helpers:
+
+| Helper | Purpose |
+| --- | --- |
+| `todo` | Keep the current task, pending work, completed work, and blockers visible in the TUI. |
+| `subagent` | Offload broad read-only research/review/planning without filling the main context. |
 
 It can run with Ollama through Ollama's OpenAI-compatible API.
 
@@ -23,6 +32,7 @@ It can run with Ollama through Ollama's OpenAI-compatible API.
 - Safer edits: `update` refuses stale file hashes and wrong line ranges
 - Benchmarks and correctness checks
 - Shared CLI/TUI agent loop with step logging, stable tool ordering, failure recovery hints, context compaction, and a higher safety step limit for long tasks
+- Visible todo cards for non-trivial work, including weak-model fallback when the model cannot produce the full nested todo JSON shape
 - Internal code map: `docs/ARCHITECTURE.md`
 
 ## Requirements
@@ -428,7 +438,13 @@ If the file changed after the model read it, the edit is rejected.
 
 CLI and TUI use the same `ToolLoopAgent` setup:
 
-- stable tool order: `subagent`, `search`, `read`, `update`, `write`, `bash`
+- stable tool order: `todo`, `subagent`, `search`, `read`, `update`, `write`, `bash`
+- visible todo planning before non-trivial changes; the TUI shows current, pending, done, and blocked work
+- resilient todo fallback for small/local models:
+  - preferred shape: `{ "phases": [{ "phase": "Implementation", "items": [{ "task": "Add feature", "status": "in_progress" }] }] }`
+  - accepted fallback arrays: `{ "tasks": ["Inspect code", "Implement fix"] }`, `{ "items": [...] }`, `{ "todos": [...] }`
+  - accepted fallback text: `{ "text": "- Inspect code\n- Implement fix" }`, `{ "plan": "..." }`, `{ "todo": "..." }`
+  - empty or invalid todo input becomes `Todo: Continue requested work` instead of dropping the card
 - step logs with finish reason, tool names, token usage, and elapsed time
 - targeted recovery hints after failed tool results; hints are written for small models as `location`, `code`, `observed`, and `next` action so a failure becomes the next step instead of breaking the loop
 - automatic context compaction for long sessions; compaction failure is logged and ignored so the agent keeps running with the un-compacted history
@@ -436,13 +452,13 @@ CLI and TUI use the same `ToolLoopAgent` setup:
 - subagent summaries are bounded handoffs (`<=80` lines / `<=5000` characters) so broad exploration does not fill the main agent context
 - while a subagent runs, the TUI shows role, goal, search/read scope, status, and `Interrupt: Esc/Ctrl+C -> prompt`; interrupting aborts the active stream and opens the prompt immediately, and a stopped subagent returns `SUBAGENT_ABORTED`, which the main loop treats as recoverable
 - high safety step limit for long tasks; the model is instructed not to final-answer while requested work remains
-- non-trivial tasks follow the main loop: analyze user input and project, create a sequential todo list, delegate the next context-heavy task, validate the subagent handoff, edit or re-delegate when the handoff is wrong, verify the task, mark todo state, and continue
+- non-trivial tasks follow the main loop: analyze user input and project, create or normalize a visible todo list, delegate the next context-heavy task, validate the subagent handoff, edit or re-delegate when the handoff is wrong, verify the task, mark todo state, and continue
 - each delegated task carries goal, current folder path, reference files, implementation steps, validation expectations, expected outcome, and clean-code/SOLID constraints
 - the main agent owns edits and validation: it inspects subagent results, runs focused verification, corrects failures before the next task, validates the overall outcome, and summarizes changes to the user
 - repository context comes from `search` and `read`; the agent is instructed not to run git commands just to provide context to the LLM
 - optional `--agent-md <path>` and `--skills-md <path>` append workspace markdown instructions to the agent prompt
-- independent `subagent`, `search`, `read`, and `bash` calls are issued in the same model step when possible so the AI SDK executes them in parallel; `write` and `update` stay serialized when they touch the same file
-- the TUI renderer patch makes upstream `@ai-sdk/tui` look closer to Oh My Pi: rounded viewport chrome, renamed chat sections, richer code fences, scrollbar, shimmer-ready progress footer, `vraj00222/tui`-style gradient progress bar, and interrupt-to-prompt recovery for modern conversational control
+- independent `subagent`, `search`, `read`, and `bash` calls are issued in the same model step when possible so the AI SDK executes them in parallel; `todo` stays cheap and updates whenever task state changes; `write` and `update` stay serialized when they touch the same file
+- the TUI renderer patch makes upstream `@ai-sdk/tui` look closer to Oh My Pi: rounded viewport chrome, renamed chat sections, richer code fences, scrollbar, shimmer-ready progress footer, `vraj00222/tui`-style gradient progress bar, todo phase cards, fallback todo notice, and interrupt-to-prompt recovery for modern conversational control
 - `write` and `update` return compact diff summaries plus best-effort LSP diagnostics for edited files
 - maintainer documentation, code reading order, and internal data-flow diagrams live in `docs/ARCHITECTURE.md`
 
