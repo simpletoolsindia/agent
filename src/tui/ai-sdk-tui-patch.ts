@@ -1,9 +1,14 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v3 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v6 */";
 
-/** Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks. */
+/**
+ * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
+ *
+ * Keep every replacement tiny and idempotent. This file is intentionally a
+ * compatibility layer, not the source of business logic.
+ */
 export async function patchAiSdkTuiRenderer(): Promise<void> {
   const require = createRequire(import.meta.url);
   const path = require.resolve("@ai-sdk/tui");
@@ -37,6 +42,13 @@ export async function patchAiSdkTuiRenderer(): Promise<void> {
   patched = replaceIfPresent(patched, originalTopBorder(), patchedTopBorder());
   patched = replaceIfPresent(patched, originalBottomBorder(), patchedBottomBorder());
   patched = replaceIfPresent(patched, currentViewportProgress(), patchedViewportProgress());
+  patched = stripHarnessToolHelpers(patched);
+  patched = replaceIfPresent(patched, previousToolStatusLine(), originalToolStatusLine());
+  patched = replaceIfPresent(patched, originalToolOutputContent(), patchedToolOutputContent());
+  patched = replaceIfPresent(patched, originalToolStatusLine(), patchedToolStatusLine());
+  if (!patched.includes("function formatHarnessToolFrame(")) {
+    patched = replaceOnce(patched, "function shouldCollapsePart(message, partIndex, mode, displayModes) {", `${harnessToolOutputHelpers()}\nfunction shouldCollapsePart(message, partIndex, mode, displayModes) {`);
+  }
   patched = patched
     .replace('{ kind: "user", title: "User", content: prompt }', '{ kind: "user", title: "You", content: prompt }')
     .replace('title: "Assistant",', 'title: "Assistant · reply",')
@@ -49,6 +61,10 @@ function replaceOnce(source: string, search: string, replacement: string): strin
     throw new Error("@ai-sdk/tui renderer patch failed: upstream source changed");
   }
   return source.replace(search, replacement);
+}
+
+function stripHarnessToolHelpers(source: string): string {
+  return source.replace(/function formatHarnessTool(?:Frame|Output)\([\s\S]*?\nfunction shouldCollapsePart\(message, partIndex, mode, displayModes\) \{/u, "function shouldCollapsePart(message, partIndex, mode, displayModes) {");
 }
 
 function replaceIfPresent(source: string, search: string, replacement: string): string {
@@ -197,6 +213,192 @@ function patchedViewportProgress(): string {
     "    bar += `\\x1B[38;2;${red};${green};50m█`;",
     "  }",
     "  return `${bar}${colors.reset}${colors.dim}${\"░\".repeat(empty)}${colors.reset}`;",
+    "}",
+  ].join("\n");
+}
+
+function originalToolOutputContent(): string {
+  return [
+    "        content: `${inputText}",
+    "",
+    "Output:",
+    "${formatValue(part.output)}`",
+  ].join("\n");
+}
+
+function patchedToolOutputContent(): string {
+  return '        content: formatHarnessToolOutput(toolName, inputText, part.output) ?? `${inputText}\\n\\nOutput:\\n${formatValue(part.output)}`';
+}
+
+function originalToolStatusLine(): string {
+  return "  const status = toolStatus(part);";
+}
+
+function previousToolStatusLine(): string {
+  return [
+    "  const status = toolStatus(part);",
+    "  if (options.collapsed && \"output\" in part) {",
+    "    const harnessOutput = formatHarnessToolOutput(toolName, inputText, part.output);",
+    "    if (harnessOutput !== void 0) {",
+    "      return {",
+    "        kind: \"tool\",",
+    "        title,",
+    "        rightTitle: status,",
+    "        content: harnessOutput",
+    "      };",
+    "    }",
+    "  }",
+  ].join("\n");
+}
+
+function patchedToolStatusLine(): string {
+  return [
+    "  const status = toolStatus(part);",
+    "  if (options.collapsed) {",
+    "    const harnessFrame = formatHarnessToolFrame(toolName, inputText, part, status);",
+    "    if (harnessFrame !== void 0) {",
+    "      return {",
+    "        kind: part.state === \"output-error\" || part.state === \"output-denied\" ? \"error\" : \"tool\",",
+    "        title,",
+    "        rightTitle: status,",
+    "        content: harnessFrame",
+    "      };",
+    "    }",
+    "  }",
+  ].join("\n");
+}
+
+
+// Tool cards are rendered with one grammar across read/search/write/update/bash:
+// `Icon Action: badge target ⟦status⟧` followed by bounded preview rows.
+// Edit tools keep the user-requested `✎ Edit: 🟦 path ⟦+N/-M⟧` diff variant.
+function harnessToolOutputHelpers(): string {
+  return [
+    "function formatHarnessToolFrame(toolName, inputText, part, status) {",
+    "  if (\"output\" in part) {",
+    "    return formatHarnessToolOutput(toolName, inputText, part.output);",
+    "  }",
+    "  if (part.state === \"output-error\") {",
+    "    return formatHarnessFrame(toolName, void 0, status, [`error: ${part.errorText}`]);",
+    "  }",
+    "  if (part.state === \"output-denied\") {",
+    "    const reason = part.approval && typeof part.approval.reason === \"string\" ? part.approval.reason : \"denied\";",
+    "    return formatHarnessFrame(toolName, toolInputTarget(toolName, \"input\" in part ? part.input : void 0), status, [`reason: ${reason}`]);",
+    "  }",
+    "  return formatHarnessFrame(toolName, toolInputTarget(toolName, \"input\" in part ? part.input : void 0), status, harnessInputRows(\"input\" in part ? part.input : void 0));",
+    "}",
+    "function formatHarnessToolOutput(toolName, inputText, output) {",
+    "  const payload = harnessToolPayload(output);",
+    "  const change = payload && typeof payload.change === \"object\" && payload.change !== null ? payload.change : void 0;",
+    "  const diff = typeof (change == null ? void 0 : change.diff) === \"string\" ? change.diff : \"\";",
+    "  if ((toolName === \"write\" || toolName === \"update\") && diff.length > 0) {",
+    "    const path = typeof (payload == null ? void 0 : payload.path) === \"string\" ? payload.path : typeof (change == null ? void 0 : change.path) === \"string\" ? change.path : \"\";",
+    "    const added = typeof change.addedLines === \"number\" ? change.addedLines : countHarnessDiff(diff).added;",
+    "    const removed = typeof change.removedLines === \"number\" ? change.removedLines : countHarnessDiff(diff).removed;",
+    "    return formatHarnessDiffFrame(path, diff, added, removed);",
+    "  }",
+    "  return formatHarnessFrame(toolName, toolOutputTarget(toolName, payload), toolOutputStatus(toolName, payload), harnessOutputRows(toolName, payload, output));",
+    "}",
+    "function harnessToolPayload(output) {",
+    "  if (typeof output !== \"object\" || output === null) {",
+    "    return void 0;",
+    "  }",
+    "  if (output.ok === true && typeof output.output === \"object\" && output.output !== null) {",
+    "    return output.output;",
+    "  }",
+    "  return output;",
+    "}",
+    "function formatHarnessFrame(toolName, target, status, rows) {",
+    "  const meta = harnessToolMeta(toolName);",
+    "  const safeTarget = target === void 0 || target.length === 0 ? toolName : target;",
+    "  return [`${meta.icon} ${meta.label}: ${meta.badge} ${sliceMiddle(safeTarget, 38)} ⟦${status}⟧ ╮`, ...rows.slice(0, 18).map((row) => `│${row}`), \"╯\"].join(\"\\n\");",
+    "}",
+    "function formatHarnessDiffFrame(path, diff, added, removed) {",
+    "  const title = `✎ Edit: 🟦 ${sliceMiddle(path, 38)} ⟦+${added}/-${removed}⟧ ╮`;",
+    "  const rows = harnessDiffRows(diff);",
+    "  return [title, ...rows, \"╯\"].join(\"\\n\");",
+    "}",
+    "function harnessToolMeta(toolName) {",
+    "  switch (toolName) {",
+    "    case \"read\": return { icon: \"◉\", label: \"Read\", badge: \"🟦\" };",
+    "    case \"search\": return { icon: \"⌕\", label: \"Search\", badge: \"🟨\" };",
+    "    case \"bash\": return { icon: \"▶\", label: \"Bash\", badge: \"🟪\" };",
+    "    case \"write\":",
+    "    case \"update\": return { icon: \"✎\", label: \"Edit\", badge: \"🟦\" };",
+    "    case \"subagent\": return { icon: \"◇\", label: \"Agent\", badge: \"🟩\" };",
+    "    default: return { icon: \"◆\", label: toolName, badge: \"⬜\" };",
+    "  }",
+    "}",
+    "function toolInputTarget(toolName, input) {",
+    "  if (typeof input !== \"object\" || input === null) return toolName;",
+    "  if (typeof input.path === \"string\") return input.path;",
+    "  if (typeof input.command === \"string\") return input.command;",
+    "  if (typeof input.query === \"string\") return input.query;",
+    "  if (typeof input.taskGoal === \"string\") return input.taskGoal;",
+    "  return toolName;",
+    "}",
+    "function toolOutputTarget(toolName, payload) {",
+    "  if (typeof payload !== \"object\" || payload === null) return toolName;",
+    "  if (typeof payload.path === \"string\") return payload.path;",
+    "  if (typeof payload.command === \"string\") return payload.command;",
+    "  return toolName;",
+    "}",
+    "function toolOutputStatus(toolName, payload) {",
+    "  if (toolName === \"search\" && payload && Array.isArray(payload.matches)) return `${payload.matches.length} matches`;",
+    "  if (toolName === \"read\" && payload && typeof payload.lineCount === \"number\") return `${payload.lineCount} lines`;",
+    "  if (toolName === \"bash\" && payload && typeof payload.exitCode === \"number\") return `exit ${payload.exitCode}`;",
+    "  if (payload && typeof payload.applied === \"number\") return `${payload.applied} edits`;",
+    "  return \"done\";",
+    "}",
+    "function harnessInputRows(input) {",
+    "  if (input === void 0) return [\"   …│input streaming\"];",
+    "  return formatValue(input).split(\"\\n\").slice(0, 6).map((line, index) => `${String(index + 1).padStart(4)}│${sliceVisible(line, 72)}`);",
+    "}",
+    "function harnessOutputRows(toolName, payload, rawOutput) {",
+    "  if (toolName === \"search\" && payload && Array.isArray(payload.matches)) {",
+    "    return payload.matches.slice(0, 6).map((match) => `${String(match.line || \"?\").padStart(4)}│${sliceVisible(`${match.path || \"\"}: ${match.text || \"\"}`, 72)}`);",
+    "  }",
+    "  if (toolName === \"bash\" && payload && typeof payload.stdout === \"string\" && payload.stdout.length > 0) {",
+    "    return payload.stdout.split(\"\\n\").slice(0, 6).map((line, index) => `${String(index + 1).padStart(4)}│${sliceVisible(line, 72)}`);",
+    "  }",
+    "  return formatValue(payload == null ? rawOutput : payload).split(\"\\n\").slice(0, 6).map((line, index) => `${String(index + 1).padStart(4)}│${sliceVisible(line, 72)}`);",
+    "}",
+    "function harnessDiffRows(diff) {",
+    "  const rows = [];",
+    "  let oldLine = 1;",
+    "  for (const line of diff.split(\"\\n\")) {",
+    "    if (line.startsWith(\"---\") || line.startsWith(\"+++\") || line.startsWith(\"@@\") || line.startsWith(\"...\")) {",
+    "      continue;",
+    "    }",
+    "    if (line.startsWith(\"-\")) {",
+    "      rows.push(`│${`-${oldLine}`.padStart(4)}│${sliceVisible(line.slice(1), 72)}`);",
+    "      oldLine += 1;",
+    "    } else if (line.startsWith(\"+\")) {",
+    "      rows.push(`│${\"+\".padStart(4)}│${sliceVisible(line.slice(1), 72)}`);",
+    "    }",
+    "    if (rows.length >= 18) {",
+    "      rows.push(\"│   …│diff preview truncated\");",
+    "      break;",
+    "    }",
+    "  }",
+    "  return rows.length === 0 ? [\"│   =│no textual changes\"] : rows;",
+    "}",
+    "function countHarnessDiff(diff) {",
+    "  let added = 0;",
+    "  let removed = 0;",
+    "  for (const line of diff.split(\"\\n\")) {",
+    "    if (line.startsWith(\"+\") && !line.startsWith(\"+++\")) added += 1;",
+    "    if (line.startsWith(\"-\") && !line.startsWith(\"---\")) removed += 1;",
+    "  }",
+    "  return { added, removed };",
+    "}",
+    "function sliceMiddle(text, width) {",
+    "  if (visibleLength(text) <= width) {",
+    "    return text;",
+    "  }",
+    "  const left = Math.max(4, Math.floor((width - 1) / 2));",
+    "  const right = Math.max(4, width - left - 1);",
+    "  return `${sliceVisible(text, left)}…${text.slice(Math.max(0, text.length - right))}`;",
     "}",
   ].join("\n");
 }

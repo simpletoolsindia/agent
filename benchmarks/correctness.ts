@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createHarness, type ReadOutput, type SearchOutput, type BashOutput, type WriteOutput, type UpdateOutput } from "../src/index.js";
 import { JsonConsoleLogger } from "../src/core/logger.js";
@@ -8,6 +8,7 @@ import { reduceProviderSetupInput, renderProviderSetupScreen, resolveProviderSet
 import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
 import { renderActivityPulse, renderCliSplash, renderMetricStrip, renderProgressBar, renderProgressSteps, renderShimmerText, renderStatusBar, visibleLength } from "../src/tui/status-bar.js";
+import { patchAiSdkTuiRenderer } from "../src/tui/ai-sdk-tui-patch.js";
 import { createDoctorReport } from "../src/cli/doctor.js";
 
 const workspace = join(process.cwd(), ".correctness-workspace");
@@ -73,9 +74,11 @@ async function main(): Promise<void> {
   results.push(record("write creates file", "success", createdWrite));
   const createdWriteOutput = mustOutput(createdWrite);
   results.push(recordCheck(
-    "write output includes diff and LSP status",
+    "write output includes diff, counts, and LSP status",
     createdWriteOutput.change.diff.includes("+++ b/src/example.ts")
       && createdWriteOutput.change.diff.includes("+export const value = 1;")
+      && createdWriteOutput.change.addedLines === 1
+      && createdWriteOutput.change.removedLines === 0
       && createdWriteOutput.lspValidation.language === "typescript",
   ));
 
@@ -104,10 +107,13 @@ async function main(): Promise<void> {
     }],
   }, context);
   results.push(record("update accepts matching file and range hash", "success", updatedWrite));
+  const updatedWriteOutput = mustOutput(updatedWrite);
   results.push(recordCheck(
-    "update output includes diff summary",
-    mustOutput(updatedWrite).change.diff.includes("-export const value = 1;")
-      && mustOutput(updatedWrite).change.diff.includes("+export const value = 3;"),
+    "update output includes counted diff summary",
+    updatedWriteOutput.change.diff.includes("-export const value = 1;")
+      && updatedWriteOutput.change.diff.includes("+export const value = 3;")
+      && updatedWriteOutput.change.addedLines === 1
+      && updatedWriteOutput.change.removedLines === 1,
   ));
 
   const staleRead = mustOutput(await registry.run<ReadOutput>("read", {
@@ -387,6 +393,18 @@ async function main(): Promise<void> {
       && gradientBar.includes("░")
       && shimmerText.includes("✦")
       && visibleLength(progressSteps) <= 48,
+  ));
+
+  await patchAiSdkTuiRenderer();
+  const patchedTuiSource = await readFile("node_modules/@ai-sdk/tui/dist/index.js", "utf8");
+  results.push(recordCheck(
+    "TUI all tool outputs use compact action frames",
+    patchedTuiSource.includes("rich tui patch v6")
+      && patchedTuiSource.includes("formatHarnessToolFrame")
+      && patchedTuiSource.includes("✎ Edit: 🟦")
+      && patchedTuiSource.includes("◉\", label: \"Read")
+      && patchedTuiSource.includes("⌕\", label: \"Search")
+      && patchedTuiSource.includes("▶\", label: \"Bash"),
   ));
 
   const progressParts = await collectInlineProgressText();

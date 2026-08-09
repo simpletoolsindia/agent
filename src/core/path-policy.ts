@@ -1,7 +1,11 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { ToolError } from "./tool.js";
 
-/** Prevents tools from reading or writing outside the configured workspace. */
+/**
+ * Workspace boundary guard used by every tool before filesystem or process work.
+ * It resolves relative paths against the configured root and rejects `..`
+ * escapes, so tools can trust the returned absolute path.
+ */
 export class WorkspacePathPolicy {
   private readonly root: string;
 

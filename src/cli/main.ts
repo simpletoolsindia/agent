@@ -55,6 +55,9 @@ type DoctorCommandOptions = SharedAgentCommandOptions & {
   readonly binName?: string;
   readonly binDir?: string;
 };
+
+// Commander keeps option names in camelCase. These presets translate one simple
+// UI density flag into the two lower-level @ai-sdk/tui display controls.
 const UI_DENSITY_PRESETS: Record<UiDensity, {
   readonly toolDisplay: TerminalPartDisplayMode;
   readonly reasoningDisplay: TerminalPartDisplayMode;
@@ -75,6 +78,9 @@ const UI_DENSITY_PRESETS: Record<UiDensity, {
 
 const program = new Command();
 
+
+// Keep command registration flat and explicit: CLI parsing lives here, while
+// model execution, TUI setup, and diagnostics stay in their own modules.
 configureProgram(program);
 registerAiCommand(program);
 registerSessionsCommand(program);

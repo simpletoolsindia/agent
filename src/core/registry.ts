@@ -14,7 +14,13 @@ export type ToolResult<O> = {
   readonly elapsedMs: number;
 };
 
-/** Central dispatch point. It keeps validation, logging, and timing consistent. */
+/**
+ * Central dispatch point for all model-requested work.
+ *
+ * The registry is intentionally boring: schema validation happens before tool
+ * execution, every tool receives a scoped logger, and every failure becomes a
+ * serializable ToolResult so the agent can recover instead of crashing.
+ */
 export class ToolRegistry {
   private readonly tools = new Map<string, Tool<unknown, unknown>>();
   private readonly validator = new SchemaValidator();

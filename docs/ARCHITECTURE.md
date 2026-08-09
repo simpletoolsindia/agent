@@ -83,6 +83,8 @@ Tools should throw `ToolError` for expected user/model recoverable failures and 
 | `update` | `src/tools/update-tool.ts` | Applies non-overlapping line replacements only when file hash and per-range hashes still match. |
 | `bash` | `src/tools/bash-tool.ts` | Runs one focused non-interactive shell command in the workspace. Non-zero exits are normal results; spawn failures and timeouts are tool errors. |
 
+All tool cards use one compact visual grammar in the TUI: `Icon Action: badge target ⟦status/count⟧ ╮` plus bounded preview rows. `write` and `update` specialize that frame as `✎ Edit: 🟦 path ⟦+N/-M⟧` with a line diff so users can scan edits without reading raw JSON.
+
 The public promise is exactly these five workspace tools. The `subagent` adapter is an AI-loop helper for read-only research; it is not part of the workspace tool surface.
 
 ## AI loop data flow
@@ -117,10 +119,11 @@ This keeps command parsing independent from model/tool behavior.
 1. `runOpenAICompatibleAiTui` calls `maybeRunProviderSetup`.
 2. Provider setup resolves model, endpoint, key, approval mode, and optional markdown instruction files.
 3. `patchAiSdkTuiRenderer` patches upstream `@ai-sdk/tui` before importing it. The dynamic import is required because the patch edits the installed dependency before module evaluation.
-4. `createSlashCommandAgent` wraps the shared coding agent with local slash-command handling.
-5. `runFullscreen` enters alternate screen mode.
-6. `runAgentTUI` renders messages, tool cards, reasoning, progress, approvals, and response statistics.
-7. `session-store.ts` persists the five newest sessions in `~/.harness-tools/sessions.json`.
+4. The renderer patch changes message labels, viewport chrome, progress footer, scroll bar, code fences, and tool output. Every tool call renders through one compact action frame; edit tools use `✎ Edit: 🟦 path ⟦+N/-M⟧` plus a bounded line diff.
+5. `createSlashCommandAgent` wraps the shared coding agent with local slash-command handling.
+6. `runFullscreen` enters alternate screen mode.
+7. `runAgentTUI` renders messages, tool cards, reasoning, progress, approvals, and response statistics.
+8. `session-store.ts` persists the five newest sessions in `~/.harness-tools/sessions.json`.
 
 ## Approval flow
 

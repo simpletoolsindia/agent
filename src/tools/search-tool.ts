@@ -25,6 +25,7 @@ export type SearchOutput = {
   readonly truncated: boolean;
 };
 
+/** Ripgrep-backed search. The tool streams JSON events and stops as soon as enough matches are collected. */
 export class SearchTool implements Tool<SearchInput, SearchOutput> {
   public readonly name = "search";
   public readonly schema = {
@@ -48,6 +49,7 @@ export class SearchTool implements Tool<SearchInput, SearchOutput> {
     const child = spawn(rgPath, args, { stdio: ["ignore", "pipe", "pipe"] });
     const closePromise = waitForClose(child);
     const stderrChunks: string[] = [];
+    let stderrBytes = 0;
     let stoppedAfterLimit = false;
     let timedOut = false;
 
@@ -58,9 +60,12 @@ export class SearchTool implements Tool<SearchInput, SearchOutput> {
 
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (chunk: string) => {
-      if (Buffer.byteLength(stderrChunks.join(""), "utf8") < MAX_STDERR_BYTES) {
-        stderrChunks.push(chunk);
+      if (stderrBytes >= MAX_STDERR_BYTES) {
+        return;
       }
+
+      stderrBytes += Buffer.byteLength(chunk, "utf8");
+      stderrChunks.push(chunk);
     });
 
     const matches: SearchOutput["matches"] = [];
@@ -71,6 +76,7 @@ export class SearchTool implements Tool<SearchInput, SearchOutput> {
       }
 
       child.stdout.setEncoding("utf8");
+      // --json keeps parsing deterministic and avoids token-heavy context lines.
       const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
       for await (const line of lines) {
         if (line.length === 0) {

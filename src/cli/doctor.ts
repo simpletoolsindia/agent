@@ -42,13 +42,22 @@ export async function runDoctorChecks(options: DoctorReportOptions): Promise<rea
   const installBinDir = options.installBinDir ?? join(process.env.HOME ?? "", ".local/bin");
   const cliPath = options.cliPath ?? process.argv[1];
 
+  // These probes are independent and read-only, so run filesystem checks
+  // concurrently to keep `harness doctor` responsive on slow disks or networked
+  // workspaces.
+  const [workspace, cliBuild, installLink] = await Promise.all([
+    checkWorkspace(options.cwd),
+    checkCliBuild(cliPath),
+    checkInstallLink(join(installBinDir, binName), cliPath),
+  ]);
+
   return [
     checkNodeVersion(),
-    await checkWorkspace(options.cwd),
-    await checkCliBuild(cliPath),
+    workspace,
+    cliBuild,
     checkProviderConfig(options),
     checkPathContains(installBinDir, options.envPath ?? process.env.PATH ?? ""),
-    await checkInstallLink(join(installBinDir, binName), cliPath),
+    installLink,
   ];
 }
 

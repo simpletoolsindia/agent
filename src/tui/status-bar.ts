@@ -35,6 +35,7 @@ export type StatusMetric = {
 };
 
 
+/** Renders the single-line progress/status row used by CLI and TUI stream hints. */
 export function renderStatusBar(label: string, message: string, width: number, tone: StatusTone = "idle", progress?: number): string {
   const safeWidth = Math.max(20, width);
   const barWidth = Math.max(6, Math.min(18, Math.floor(safeWidth / 6)));
@@ -68,6 +69,7 @@ export type ProgressBarRenderOptions = {
   readonly gradient?: boolean;
 };
 
+/** Builds a bounded bar without allocations proportional to terminal width beyond the requested bar size. */
 export function renderProgressBar(options: ProgressBarRenderOptions): string {
   const total = Math.max(1, options.total ?? 100);
   const width = Math.max(1, options.width ?? 16);
@@ -91,6 +93,7 @@ export function renderProgressBar(options: ProgressBarRenderOptions): string {
   return `${CYAN}${completeChar.repeat(filled)}${RESET}${GRAY}${incompleteChar.repeat(empty)}${RESET}`;
 }
 
+/** Adds a lightweight shimmer effect for active labels; spaces stay stable to avoid layout jitter. */
 export function renderShimmerText(text: string, frame: number, sparkleChars: readonly string[] = ["✦", "✧", "⋆", "·"]): string {
   let output = "";
   let sparkleIndex = 0;

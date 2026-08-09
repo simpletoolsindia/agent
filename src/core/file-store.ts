@@ -10,7 +10,12 @@ export type TextFile = {
 
 export type DurabilityMode = "safe" | "fast";
 
-/** File access boundary. Tools use this instead of calling fs directly. */
+/**
+ * File access boundary for text tools.
+ *
+ * Keeping reads/writes here makes durability decisions and hashing consistent:
+ * callers receive the SHA-256 for exactly the bytes that were read or written.
+ */
 export class NodeFileStore {
   public async readText(absPath: string): Promise<TextFile> {
     const content = await readFile(absPath, "utf8");

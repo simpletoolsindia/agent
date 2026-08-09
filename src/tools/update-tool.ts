@@ -31,6 +31,7 @@ export type UpdateOutput = {
   readonly lspValidation: LspValidation;
 };
 
+/** Hash-guarded editor. It rejects stale reads before touching the filesystem. */
 export class UpdateTool implements Tool<UpdateInput, UpdateOutput> {
   public readonly name = "update";
   public readonly schema = {
@@ -81,7 +82,9 @@ export class UpdateTool implements Tool<UpdateInput, UpdateOutput> {
     this.assertValidRanges(sorted, index.lineCount(), input.path);
     this.assertExpectedHashes(sorted, index, input.path);
 
-    const next = applyReplacements(current.content, sorted);
+    // LineIndex already owns the split line array, so reuse it instead of
+    // splitting large files again just to apply replacements.
+    const next = index.replaceMany(sorted);
     const durability = input.durability ?? "safe";
     const written = await this.files.writeTextAtomic(absPath, next, durability);
     context.logger.info("file.update", { path: input.path, applied: input.operations.length, durability });
@@ -138,17 +141,3 @@ export class UpdateTool implements Tool<UpdateInput, UpdateOutput> {
   }
 }
 
-function applyReplacements(content: string, operations: readonly ReplaceOperation[]): string {
-  const lines = content.split(/(?<=\n)/u);
-  const chunks: string[] = [];
-  let cursor = lines.length;
-
-  for (const operation of operations) {
-    chunks.push(lines.slice(operation.endLine, cursor).join(""));
-    chunks.push(operation.content);
-    cursor = operation.startLine - 1;
-  }
-
-  chunks.push(lines.slice(0, cursor).join(""));
-  return chunks.reverse().join("");
-}

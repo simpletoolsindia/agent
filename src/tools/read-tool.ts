@@ -1,11 +1,14 @@
-import type { Stats } from "node:fs";
+import type { Dirent, Stats } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { sha256, shortHash } from "../core/hash.js";
 import { LineIndex } from "../core/line-index.js";
 import type { Tool, ToolContext } from "../core/tool.js";
 import { ToolError } from "../core/tool.js";
 
+
+const DEFAULT_FILE_LINE_LIMIT = 120;
+const DIRECTORY_ENTRY_LIMIT = 200;
 export type ReadInput = {
   readonly path: string;
   readonly startLine?: number;
@@ -27,6 +30,7 @@ export type ReadOutput = {
   readonly nextStartLine?: number;
 };
 
+/** Workspace reader. It is the only tool that returns hashes for later edits. */
 export class ReadTool implements Tool<ReadInput, ReadOutput> {
   public readonly name = "read";
   public readonly schema = {
@@ -53,20 +57,22 @@ export class ReadTool implements Tool<ReadInput, ReadOutput> {
 
   private async readDirectory(inputPath: string, absPath: string, context: ToolContext): Promise<ReadOutput> {
     const dirents = await readdir(absPath, { withFileTypes: true });
-    const visible = dirents.slice(0, 200);
-    const entries = await Promise.all(visible.map(async (entry) => {
-      const childInputPath = `${inputPath}/${entry.name}`;
-      const childPath = context.pathPolicy.resolveInside(childInputPath);
-      const childStat = await this.statPath(childPath, childInputPath);
-      return {
-        name: entry.name,
-        kind: entry.isDirectory() ? "directory" as const : "file" as const,
-        size: childStat.size,
-      };
-    }));
+    const visible = dirents.slice(0, DIRECTORY_ENTRY_LIMIT);
+    const entries = await Promise.all(visible.map(async (entry) => this.toDirectoryEntry(entry, inputPath, absPath)));
 
     context.logger.info("directory.read", { path: inputPath, returned: entries.length, total: dirents.length });
     return { path: inputPath, kind: "directory", entries, truncated: dirents.length > entries.length };
+  }
+
+  private async toDirectoryEntry(entry: Dirent, inputPath: string, absPath: string): Promise<NonNullable<ReadOutput["entries"]>[number]> {
+    const childInputPath = joinInputPath(inputPath, entry.name);
+    const childPath = join(absPath, entry.name);
+    const childStat = await this.statPath(childPath, childInputPath);
+    return {
+      name: entry.name,
+      kind: entry.isDirectory() ? "directory" as const : "file" as const,
+      size: childStat.size,
+    };
   }
 
   private async readFile(input: ReadInput, absPath: string, context: ToolContext): Promise<ReadOutput> {
@@ -75,7 +81,7 @@ export class ReadTool implements Tool<ReadInput, ReadOutput> {
     const fileHash = sha256(content);
     const lineCount = index.lineCount();
     const startLine = input.startLine ?? 1;
-    const limitLines = input.limitLines ?? 120;
+    const limitLines = input.limitLines ?? DEFAULT_FILE_LINE_LIMIT;
 
     if (lineCount > 0 && startLine > lineCount) {
       throw new ToolError("Read startLine is beyond the end of the file", "READ_RANGE_INVALID", {
@@ -130,4 +136,8 @@ export class ReadTool implements Tool<ReadInput, ReadOutput> {
 
 function isErrnoCode(error: unknown, code: string): boolean {
   return error instanceof Error && (error as NodeJS.ErrnoException).code === code;
+}
+
+function joinInputPath(parent: string, child: string): string {
+  return parent === "." || parent === "" ? child : `${parent.replace(/\/$/u, "")}/${child}`;
 }
