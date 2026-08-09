@@ -428,7 +428,7 @@ async function main(): Promise<void> {
   const patchedTuiSource = await readFile("node_modules/@ai-sdk/tui/dist/index.js", "utf8");
   results.push(recordCheck(
     "TUI tool and reasoning outputs use referenced box frames",
-    patchedTuiSource.includes("rich tui patch v12")
+    patchedTuiSource.includes("rich tui patch v13")
       && patchedTuiSource.includes("renderHarnessOutputBox")
       && patchedTuiSource.includes("harnessSeparator")
       && patchedTuiSource.includes("formatHarnessBashFrame")
@@ -439,6 +439,8 @@ async function main(): Promise<void> {
       && patchedTuiSource.includes("Interrupt: Esc/Ctrl+C")
       && patchedTuiSource.includes("Interrupted · type what should happen next")
       && patchedTuiSource.includes("streamWithoutPrompt = false")
+      && patchedTuiSource.includes("formatHarnessValue")
+      && patchedTuiSource.includes("value === void 0 ? \"\"")
       && patchedTuiSource.includes("formatHarnessReasoningFrame")
       && patchedTuiSource.includes("Think · live")
       && patchedTuiSource.includes("live reasoning stream")

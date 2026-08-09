@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v12 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v13 */";
 
 /**
  * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
@@ -502,7 +502,7 @@ function harnessToolOutputHelpers(): string {
     "function formatHarnessSubagentResultFrame(payload, output) {",
     "  const role = typeof payload.role === \"string\" ? payload.role : \"research\";",
     "  const goal = typeof payload.taskGoal === \"string\" ? payload.taskGoal : \"subagent\";",
-    "  const summary = typeof payload.summary === \"string\" ? payload.summary : formatValue(payload);",
+    "  const summary = typeof payload.summary === \"string\" ? payload.summary : formatHarnessValue(payload);",
     "  const elapsed = output && typeof output === \"object\" && typeof output.elapsedMs === \"number\" ? `Wall: ${Math.max(0, output.elapsedMs / 1000).toFixed(2)}s` : void 0;",
     "  const rows = [`Goal: ${sliceMiddle(goal, 48)}`, ...summary.split(\"\\n\").filter((line) => line.length > 0).slice(0, 10)];",
     "  if (payload.summaryTruncated === true) rows.push(\"⟦summary compacted for main context⟧\");",
@@ -600,13 +600,20 @@ function harnessToolOutputHelpers(): string {
     "}",
     "function harnessInputRows(input) {",
     "  if (input === void 0) return [\"input streaming\"];",
-    "  return formatValue(input).split(\"\\n\").slice(0, 6).map((line, index) => `${String(index + 1).padStart(4)}│${sliceVisible(line, 72)}`);",
+    "  return formatHarnessValue(input).split(\"\\n\").slice(0, 6).map((line, index) => `${String(index + 1).padStart(4)}│${sliceVisible(line, 72)}`);",
     "}",
     "function harnessOutputRows(toolName, payload, rawOutput) {",
     "  if (toolName === \"search\" && payload && Array.isArray(payload.matches)) {",
     "    return payload.matches.slice(0, 6).map((match) => `${String(match.line || \"?\").padStart(4)}│${sliceVisible(`${match.path || \"\"}: ${match.text || \"\"}`, 72)}`);",
     "  }",
-    "  return formatValue(payload == null ? rawOutput : payload).split(\"\\n\").slice(0, 6).map((line, index) => `${String(index + 1).padStart(4)}│${sliceVisible(line, 72)}`);",
+    "  return formatHarnessValue(payload == null ? rawOutput : payload).split(\"\\n\").slice(0, 6).map((line, index) => `${String(index + 1).padStart(4)}│${sliceVisible(line, 72)}`);",
+    "}",
+    "function formatHarnessValue(value) {",
+    "  const formatted = formatValue(value);",
+    "  if (typeof formatted === \"string\") {",
+    "    return formatted;",
+    "  }",
+    "  return value === void 0 ? \"\" : String(value);",
     "}",
     "function harnessDiffRows(diff) {",
     "  const rows = [];",
