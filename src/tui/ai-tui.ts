@@ -13,7 +13,7 @@ export type OpenAICompatibleAiTuiOptions = OpenAICompatibleCodingAgentOptions & 
 };
 
 const DEFAULT_TOOL_DISPLAY: TerminalPartDisplayMode = "collapsed";
-const DEFAULT_REASONING_DISPLAY: TerminalPartDisplayMode = "collapsed";
+const DEFAULT_REASONING_DISPLAY: TerminalPartDisplayMode = "auto-collapsed";
 
 /** Starts the interactive terminal UI for the OpenAI-compatible coding AI. */
 export async function runOpenAICompatibleAiTui(options: OpenAICompatibleAiTuiOptions): Promise<void> {

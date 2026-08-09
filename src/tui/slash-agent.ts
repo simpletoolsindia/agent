@@ -125,6 +125,20 @@ class SlashCommandAgent {
     if (args[0] === "help") {
       return { text: settingsHelpText() };
     }
+    if (args[0] === "auto" || args[0] === "auto-approve" || args[0] === "safe") {
+      this.settings = { ...this.settings, approvalMode: args[0] === "safe" ? "safe" : "auto" };
+      return {
+        text: [
+          `## Approval ${this.settings.approvalMode === "auto" ? "auto" : "safe"} mode enabled`,
+          this.settings.approvalMode === "auto"
+            ? "Tools that are configured for auto approval can run without an approval prompt."
+            : "Write and bash tools will ask for approval again.",
+          "",
+          formatSettings(this.settings, this.compactNextPrompts, this.compactRuns),
+        ].join("\n"),
+        rebuildAgent: true,
+      };
+    }
     if (args[0] === "ollama" || args[0] === "openai") {
       const messages = this.applySettingsPreset(args[0]);
       return {
@@ -311,6 +325,8 @@ function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, comp
     "Quick setup:",
     "",
     "- `/settings ollama` sets `base-url` to `http://localhost:11434/v1` and API key to `ollama`.",
+    "- `/settings auto` turns on auto approval for tools that support it.",
+    "- `/settings safe` turns approval prompts back on.",
     "- `/settings openai` clears `base-url` and uses the default OpenAI endpoint.",
     "- `/settings menu` shows this screen. `/settings help` shows commands only.",
     "",
@@ -332,6 +348,7 @@ function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, comp
     "```txt",
     "/settings ollama",
     "/settings model qwen2.5-coder:7b",
+    "/settings auto",
     "/settings approval auto",
     "/settings agent-md AGENT.md skills-md SKILLS.md",
     "/settings api-key none",
@@ -347,6 +364,8 @@ function settingsHelpText(): string {
     "| --- | --- |",
     "| `/settings menu` | Show setup shortcuts and active values. |",
     "| `/settings ollama` | Configure local Ollama defaults. |",
+    "| `/settings auto` or `/settings auto-approve` | Turn on auto approval for tools that support it. |",
+    "| `/settings safe` | Turn approval prompts back on. |",
     "| `/settings openai` | Use the default OpenAI endpoint. |",
     "| `/settings model <id>` | Switch model for future turns. |",
     "| `/settings base-url <url>` | Switch OpenAI-compatible endpoint. `none` clears it. |",
@@ -365,6 +384,7 @@ function slashHelpText(settings: RuntimeSettings, compactEnabled: boolean, compa
     "| --- | --- |",
     "| `/settings menu` | Show setup shortcuts, active config, and examples. |",
     "| `/settings ollama` | Configure local Ollama in one command. |",
+    "| `/settings auto` | Turn on auto approval without remembering `approval auto`. |",
     "| `/settings help` | Show all settings commands. |",
     "| `/compact` | Prune old slash chatter and tool-heavy history for future turns. |",
     "| `/agents` | Show built-in read-only subagent modes and delegation examples. |",
@@ -562,7 +582,7 @@ async function* animatedFullStream(resultPromise: Promise<unknown>): AsyncIterab
     yield {
       type: "reasoning-delta",
       id: "processing",
-      text: renderStatusBar("Processing", "Waiting for model response or tool stream…", 72, "busy"),
+      text: renderStatusBar("Processing", "Waiting for model response or tool stream…", 72, "busy", 0.25),
     };
     while (!settled) {
       await delay(250);
@@ -575,7 +595,97 @@ async function* animatedFullStream(resultPromise: Promise<unknown>): AsyncIterab
   }
 
   const resolved = result ?? await resultPromise as { readonly fullStream: AsyncIterable<unknown> };
-  yield* resolved.fullStream;
+  yield* withInlineProgress(resolved.fullStream);
+}
+
+export async function* withInlineProgress(stream: AsyncIterable<unknown>): AsyncIterable<unknown> {
+  let step = 0;
+  let currentStatusId: string | undefined;
+  const toolNames = new Map<string, string>();
+
+  for await (const chunk of stream) {
+    const record = asRecord(chunk);
+    const chunkType = typeof record?.type === "string" ? record.type : "";
+
+    if (chunkType === "start-step") {
+      step += 1;
+      currentStatusId = `harness-progress-${step}`;
+      yield chunk;
+      yield { type: "reasoning-start", id: currentStatusId };
+      yield {
+        type: "reasoning-delta",
+        id: currentStatusId,
+        text: renderStatusBar(`Step ${step}`, "Thinking and planning next action…", 72, "busy", 0.3),
+      };
+      continue;
+    }
+
+    if (record !== undefined && currentStatusId !== undefined && chunkType === "tool-input-start") {
+      const toolName = readString(record, "toolName") ?? "tool";
+      const toolCallId = readString(record, "toolCallId");
+      if (toolCallId !== undefined) {
+        toolNames.set(toolCallId, toolName);
+      }
+      yield {
+        type: "reasoning-delta",
+        id: currentStatusId,
+        text: `\n${renderStatusBar("Tool", `${toolName} input streaming…`, 72, "busy", 0.45)}`,
+      };
+    }
+
+    if (record !== undefined && currentStatusId !== undefined && chunkType === "tool-input-available") {
+      const toolName = toolNameFor(record, toolNames);
+      yield {
+        type: "reasoning-delta",
+        id: currentStatusId,
+        text: `\n${renderStatusBar("Tool", `${toolName} running…`, 72, "busy", 0.65)}`,
+      };
+    }
+
+    if (record !== undefined && currentStatusId !== undefined && (chunkType === "tool-output-available" || chunkType === "tool-output-denied" || chunkType === "tool-output-error")) {
+      const toolName = toolNameFor(record, toolNames);
+      const failed = chunkType === "tool-output-error" || chunkType === "tool-output-denied";
+      yield {
+        type: "reasoning-delta",
+        id: currentStatusId,
+        text: `\n${renderStatusBar("Tool", `${toolName} ${failed ? "needs attention" : "complete"}.`, 72, failed ? "warn" : "success", failed ? 0.4 : 1)}`,
+      };
+    }
+
+    if (chunkType === "finish-step" && currentStatusId !== undefined) {
+      yield {
+        type: "reasoning-delta",
+        id: currentStatusId,
+        text: `\n${renderStatusBar(`Step ${step}`, "Step complete.", 72, "success", 1)}`,
+      };
+      yield { type: "reasoning-end", id: currentStatusId };
+      currentStatusId = undefined;
+    }
+
+    if (chunkType === "finish" && currentStatusId !== undefined) {
+      yield { type: "reasoning-end", id: currentStatusId };
+      currentStatusId = undefined;
+    }
+
+    yield chunk;
+  }
+}
+
+function toolNameFor(record: Record<string, unknown>, toolNames: ReadonlyMap<string, string>): string {
+  const toolCallId = readString(record, "toolCallId");
+  if (toolCallId === undefined) {
+    return "tool";
+  }
+  return toolNames.get(toolCallId) ?? "tool";
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
+}
+
+function readString(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" ? value : undefined;
 }
 
 async function delay(ms: number): Promise<void> {

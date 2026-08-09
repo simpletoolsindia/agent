@@ -8,10 +8,11 @@ const RESET = `${ESC}[0m`;
 
 export type StatusTone = "idle" | "busy" | "success" | "warn";
 
-export function renderStatusBar(label: string, message: string, width: number, tone: StatusTone = "idle"): string {
+export function renderStatusBar(label: string, message: string, width: number, tone: StatusTone = "idle", progress?: number): string {
   const safeWidth = Math.max(20, width);
   const barWidth = Math.max(6, Math.min(18, Math.floor(safeWidth / 5)));
-  const filled = tone === "busy" ? Math.max(1, Math.floor(barWidth * 0.65)) : tone === "success" ? barWidth : 0;
+  const normalizedProgress = progress === undefined ? defaultProgress(tone) : Math.min(1, Math.max(0, progress));
+  const filled = Math.round(barWidth * normalizedProgress);
   const color = toneColor(tone);
   const bar = `${color}${"█".repeat(filled)}${DIM}${"░".repeat(barWidth - filled)}${RESET}`;
   const prefix = `${color}${label}${RESET} ${bar}`;
@@ -59,6 +60,19 @@ export function stripAnsi(text: string): string {
 function ansiEndIndex(text: string, start: number): number {
   const match = /\x1B\[[0-?]*[ -/]*[@-~]/.exec(text.slice(start));
   return match?.index === 0 ? start + match[0].length : start + 1;
+}
+
+function defaultProgress(tone: StatusTone): number {
+  switch (tone) {
+    case "busy":
+      return 0.65;
+    case "success":
+      return 1;
+    case "warn":
+      return 0.35;
+    case "idle":
+      return 0;
+  }
 }
 
 function toneColor(tone: StatusTone): string {

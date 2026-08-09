@@ -1,3 +1,4 @@
+import type { ApprovalMode } from "../ai/ai-tools.js";
 import type { OpenAICompatibleCodingAgentOptions } from "../ai/coding-agent.js";
 import { clipAnsi, renderStatusBar, visibleLength } from "./status-bar.js";
 
@@ -12,11 +13,12 @@ const CYAN = `${ESC}[36m`;
 const GREEN = `${ESC}[32m`;
 const YELLOW = `${ESC}[33m`;
 
-const FIELDS = ["model", "baseURL", "apiKey", "agentMdPath", "skillsMdPath"] as const;
+const FIELDS = ["model", "baseURL", "apiKey", "approvalMode", "agentMdPath", "skillsMdPath"] as const;
 const FIELD_LABELS: Record<ProviderSetupField, string> = {
   model: "Model name",
   baseURL: "Server URL",
   apiKey: "API key",
+  approvalMode: "Approval mode",
   agentMdPath: "Agent.md path",
   skillsMdPath: "Skills.md path",
 };
@@ -24,6 +26,7 @@ const FIELD_HELP: Record<ProviderSetupField, string> = {
   model: "Examples: gpt-4o-mini, qwen2.5-coder:7b, llama3.1:8b",
   baseURL: "OpenAI-compatible /v1 endpoint. Leave blank for OpenAI default.",
   apiKey: "Stored only in memory for this run. Use ollama for local Ollama.",
+  approvalMode: "safe asks before write/bash; auto runs approved tools without prompting.",
   agentMdPath: "Optional workspace markdown with project-specific agent instructions.",
   skillsMdPath: "Optional workspace markdown with reusable skill instructions.",
 };
@@ -34,6 +37,7 @@ type ProviderSetupValues = {
   readonly model: string;
   readonly baseURL?: string;
   readonly apiKey?: string;
+  readonly approvalMode?: ApprovalMode;
   readonly agentMdPath?: string;
   readonly skillsMdPath?: string;
 };
@@ -42,6 +46,7 @@ type MutableProviderSetupValues = {
   model: string;
   baseURL: string;
   apiKey: string;
+  approvalMode: string;
   agentMdPath: string;
   skillsMdPath: string;
 };
@@ -76,6 +81,7 @@ export async function maybeRunProviderSetup<T extends OpenAICompatibleCodingAgen
     apiKey: options.apiKey,
     agentMdPath: options.agentMdPath,
     skillsMdPath: options.skillsMdPath,
+    approvalMode: options.approvalMode,
   });
 
   return resolveProviderSetupOptions(options, values);
@@ -90,6 +96,7 @@ export function resolveProviderSetupOptions<T extends OpenAICompatibleCodingAgen
     model: values.model.trim().length === 0 ? options.model : values.model.trim(),
     baseURL: normalizedOptionalValue(values.baseURL),
     apiKey: normalizedOptionalValue(values.apiKey),
+    approvalMode: normalizedApprovalMode(values.approvalMode, options.approvalMode),
     agentMdPath: normalizedOptionalValue(values.agentMdPath),
     skillsMdPath: normalizedOptionalValue(values.skillsMdPath),
   };
@@ -105,6 +112,7 @@ export async function runProviderSetup(initial: ProviderSetupValues): Promise<Pr
       model: initial.model,
       baseURL: initial.baseURL ?? "",
       apiKey: initial.apiKey ?? "",
+      approvalMode: initial.approvalMode ?? "safe",
       agentMdPath: initial.agentMdPath ?? "",
       skillsMdPath: initial.skillsMdPath ?? "",
     },
@@ -178,7 +186,7 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
           baseURL: "http://localhost:11434/v1",
           apiKey: "ollama",
         },
-        message: "Ollama preset applied. Press Ctrl+S to start.",
+        message: "Ollama preset applied. Press Ctrl+A for auto approval or Ctrl+S to start.",
       },
     };
   }
@@ -189,6 +197,16 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
         ...state,
         values: { ...state.values, baseURL: "", apiKey: "" },
         message: "OpenAI default endpoint selected. Add an API key if needed.",
+      },
+    };
+  }
+  if (key === "\u0001") {
+    return {
+      type: "state",
+      state: {
+        ...state,
+        values: { ...state.values, approvalMode: state.values.approvalMode === "auto" ? "safe" : "auto" },
+        message: state.values.approvalMode === "auto" ? "Safe approval enabled." : "Auto approval enabled for this session.",
       },
     };
   }
@@ -260,7 +278,7 @@ export function renderProviderSetupScreen(state: ProviderSetupState, width: numb
     ...FIELDS.flatMap((field, index) => renderFieldRows(state, field, index, contentWidth)),
     framedLine("", contentWidth),
     framedLine(`${CYAN}Tab/↓${RESET} next  ${CYAN}↑${RESET} previous  ${CYAN}Enter${RESET} next/start  ${CYAN}Ctrl+S${RESET} start`, contentWidth),
-    framedLine(`${CYAN}Ctrl+O${RESET} local Ollama  ${CYAN}Ctrl+D${RESET} OpenAI endpoint  ${CYAN}Ctrl+U${RESET} clear  ${CYAN}Esc${RESET} cancel`, contentWidth),
+    framedLine(`${CYAN}Ctrl+O${RESET} Ollama  ${CYAN}Ctrl+A${RESET} auto approval  ${CYAN}Ctrl+D${RESET} OpenAI  ${CYAN}Ctrl+U${RESET} clear  ${CYAN}Esc${RESET} cancel`, contentWidth),
     framedLine("", contentWidth),
     framedLine(renderStatusBar("Status", state.message ?? "Ready", contentWidth, state.message === undefined ? "idle" : "busy"), contentWidth),
     bottomBorder(safeWidth),
@@ -275,6 +293,13 @@ function validateProviderSetup(state: ProviderSetupState):
     return {
       type: "state",
       state: { ...state, activeField: 0, message: "Model name is required." },
+    };
+  }
+  const approval = normalizedApprovalMode(state.values.approvalMode, undefined);
+  if (approval === undefined) {
+    return {
+      type: "state",
+      state: { ...state, activeField: FIELDS.indexOf("approvalMode"), message: "Approval mode must be safe or auto." },
     };
   }
   return { type: "submit" };
@@ -299,6 +324,7 @@ function toProviderSetupValues(values: MutableProviderSetupValues): ProviderSetu
     model: values.model.trim(),
     baseURL: normalizedOptionalValue(values.baseURL),
     apiKey: normalizedOptionalValue(values.apiKey),
+    approvalMode: normalizedApprovalMode(values.approvalMode, "safe") ?? "safe",
     agentMdPath: normalizedOptionalValue(values.agentMdPath),
     skillsMdPath: normalizedOptionalValue(values.skillsMdPath),
   };
@@ -310,6 +336,17 @@ function normalizedOptionalValue(value: string | undefined): string | undefined 
     return undefined;
   }
   return trimmed;
+}
+
+function normalizedApprovalMode(value: string | undefined, fallback: ApprovalMode | undefined): ApprovalMode | undefined {
+  const trimmed = value?.trim().toLowerCase();
+  if (trimmed === undefined || trimmed.length === 0 || trimmed === "none") {
+    return fallback;
+  }
+  if (trimmed === "safe" || trimmed === "auto") {
+    return trimmed;
+  }
+  return undefined;
 }
 
 function topBorder(width: number, title: string): string {

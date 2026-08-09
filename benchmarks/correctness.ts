@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { createHarness, type ReadOutput, type SearchOutput, type BashOutput } from "../src/index.js";
 import { JsonConsoleLogger } from "../src/core/logger.js";
 import type { ToolResult } from "../src/core/registry.js";
-import { createSlashCommandAgent } from "../src/tui/slash-agent.js";
-import { renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
+import { createSlashCommandAgent, withInlineProgress } from "../src/tui/slash-agent.js";
+import { reduceProviderSetupInput, renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
 import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
 import { renderStatusBar } from "../src/tui/status-bar.js";
@@ -195,6 +195,9 @@ async function main(): Promise<void> {
   const settingsText = await collectSlashText(slashAgent, "/settings model qwen2.5-coder:7b approval auto");
   results.push(recordCheck("slash settings updates runtime config", settingsText.includes("qwen2.5-coder:7b") && settingsText.includes("| approval | auto |")));
 
+  const autoSettingsText = await collectSlashText(slashAgent, "/settings auto");
+  results.push(recordCheck("slash settings has easy auto approval", autoSettingsText.includes("auto mode enabled") && autoSettingsText.includes("| approval | auto |")));
+
   const contextSettingsText = await collectSlashText(slashAgent, "/settings agent-md AGENT.md skills-md SKILLS.md");
   results.push(recordCheck(
     "slash settings updates markdown context files",
@@ -237,10 +240,11 @@ async function main(): Promise<void> {
       && contextInstructions.includes("Use focused validation"),
   ));
 
-  const setupOptions = resolveProviderSetupOptions({ cwd: workspace, model: "gpt-4o-mini", baseURL: undefined, apiKey: "old", agentMdPath: undefined, skillsMdPath: undefined }, {
+  const setupOptions = resolveProviderSetupOptions({ cwd: workspace, model: "gpt-4o-mini", baseURL: undefined, apiKey: "old", approvalMode: undefined, agentMdPath: undefined, skillsMdPath: undefined }, {
     model: "qwen2.5-coder:7b",
     baseURL: " http://localhost:11434/v1 ",
     apiKey: " ollama ",
+    approvalMode: "auto",
     agentMdPath: " AGENT.md ",
     skillsMdPath: " SKILLS.md ",
   });
@@ -250,6 +254,7 @@ async function main(): Promise<void> {
       && setupOptions.baseURL === "http://localhost:11434/v1"
       && setupOptions.apiKey === "ollama"
       && setupOptions.agentMdPath === "AGENT.md"
+      && setupOptions.approvalMode === "auto"
       && setupOptions.skillsMdPath === "SKILLS.md",
   ));
 
@@ -259,6 +264,7 @@ async function main(): Promise<void> {
       model: "qwen2.5-coder:7b",
       baseURL: "http://localhost:11434/v1",
       apiKey: "ollama",
+      approvalMode: "safe",
       agentMdPath: "AGENT.md",
       skillsMdPath: "SKILLS.md",
     },
@@ -270,14 +276,40 @@ async function main(): Promise<void> {
       && setupScreen.includes("Server URL")
       && setupScreen.includes("API key")
       && setupScreen.includes("Agent.md path")
-      && setupScreen.includes("Skills.md path")
-      && setupScreen.includes("Ctrl+O"),
+      && setupScreen.includes("Approval mode")
+      && setupScreen.includes("Ctrl+A"),
+  ));
+
+  const autoApprovalSetup = reduceProviderSetupInput({
+    activeField: 3,
+    values: {
+      model: "gpt-4o-mini",
+      baseURL: "",
+      apiKey: "",
+      approvalMode: "safe",
+      agentMdPath: "",
+      skillsMdPath: "",
+    },
+    message: "Ready",
+  }, "\u0001");
+  results.push(recordCheck(
+    "provider setup toggles auto approval",
+    autoApprovalSetup.type === "state" && autoApprovalSetup.state.values.approvalMode === "auto",
   ));
 
   const statusBar = renderStatusBar("Processing", "Waiting for model response or tool stream", 48, "busy");
   results.push(recordCheck(
     "status bar renders bounded processing state",
     statusBar.includes("Processing") && statusBar.includes("█") && statusBar.length < 80,
+  ));
+
+  const progressParts = await collectInlineProgressText();
+  results.push(recordCheck(
+    "agent stream adds inline progress and tool status",
+    progressParts.includes("Step 1")
+      && progressParts.includes("Tool")
+      && progressParts.includes("search running")
+      && progressParts.includes("Step complete"),
   ));
 
   const passed = results.filter((result) => result.passed).length;
@@ -296,6 +328,24 @@ async function collectSlashText(agent: { readonly stream: (options: { readonly p
   let text = "";
   for await (const part of result.fullStream) {
     if (typeof part === "object" && part !== null && "type" in part && part.type === "text-delta" && "text" in part && typeof part.text === "string") {
+      text += part.text;
+    }
+  }
+  return text;
+}
+
+async function collectInlineProgressText(): Promise<string> {
+  async function* source(): AsyncIterable<unknown> {
+    yield { type: "start-step" };
+    yield { type: "tool-input-start", toolCallId: "call-1", toolName: "search" };
+    yield { type: "tool-input-available", toolCallId: "call-1", toolName: "search", input: { query: "needle" } };
+    yield { type: "tool-output-available", toolCallId: "call-1", output: { matches: [] } };
+    yield { type: "finish-step" };
+  }
+
+  let text = "";
+  for await (const part of withInlineProgress(source())) {
+    if (typeof part === "object" && part !== null && "type" in part && part.type === "reasoning-delta" && "text" in part && typeof part.text === "string") {
       text += part.text;
     }
   }

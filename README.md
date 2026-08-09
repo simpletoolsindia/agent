@@ -162,13 +162,13 @@ npm run tui -- \
   --ui-density compact
 ```
 
-The TUI opens a rich setup screen when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, `agent.md`, and `skills.md` before the chat starts. The screen uses a bounded status bar so setup messages do not overlap narrow terminals. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
+The TUI opens a rich setup screen when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, approval mode, `agent.md`, and `skills.md` before the chat starts. The screen uses a bounded status/progress bar so setup messages do not overlap narrow terminals. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
 
 UI density presets:
 
 | Preset | Tool cards | Reasoning | Use when |
 | --- | --- | --- | --- |
-| `compact` | collapsed | collapsed | Default. Best for long tool-heavy sessions. |
+| `compact` | collapsed | auto-collapsed | Default. Best for long tool-heavy sessions with inline progress. |
 | `normal` | auto-collapsed | collapsed | Shows the latest active tool with more detail. |
 | `debug` | full | full | Shows full tool input/output and reasoning. |
 
@@ -187,6 +187,7 @@ Provider setup controls:
 | `Enter` | Move next, or start from the final markdown field. |
 | `Ctrl+S` | Start the TUI with the current values. |
 | `Ctrl+O` | Fill Ollama provider defaults: `qwen2.5-coder:7b`, `http://localhost:11434/v1`, `ollama`. |
+| `Ctrl+A` | Toggle approval mode between `safe` and `auto`. |
 | `Ctrl+D` | Use the default OpenAI endpoint by clearing server URL and API key. |
 | `Ctrl+U` | Clear the active field. |
 | Markdown fields | Optional workspace-relative paths for extra agent and skill instructions. |
@@ -341,6 +342,17 @@ Options:
 --setup                     Always open the rich provider setup UI before chat.
 --no-setup                  Skip the provider setup UI.
 -h, --help                   Show help.
+```
+
+Useful TUI slash commands:
+
+```txt
+/settings menu              Show setup shortcuts, active config, and examples.
+/settings ollama            Configure local Ollama defaults.
+/settings auto              Turn on auto approval for tools that support it.
+/settings safe              Turn approval prompts back on.
+/settings model <id>        Switch model for future turns.
+/compact                    Drop old slash chatter and tool-heavy history.
 ```
 
 ## Safety model
