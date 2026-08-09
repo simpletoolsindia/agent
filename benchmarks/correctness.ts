@@ -244,7 +244,7 @@ async function main(): Promise<void> {
   results.push(recordCheck("slash compact returns local confirmation", compactText.includes("Context compacted")));
 
   const agentsText = await collectSlashText(slashAgent, "/agents");
-  results.push(recordCheck("slash agents documents subagent roles", agentsText.includes("Built-in subagents") && agentsText.includes("research") && agentsText.includes("review") && agentsText.includes("plan") && agentsText.includes("compact handoff")));
+  results.push(recordCheck("slash agents documents subagent roles", agentsText.includes("Built-in subagents") && agentsText.includes("research") && agentsText.includes("review") && agentsText.includes("plan") && agentsText.includes("compact handoff") && agentsText.includes("interrupt the current stream")));
   const sessionsText = await collectSlashText(slashAgent, "/sessions");
   results.push(recordCheck("slash sessions lists resumable store", sessionsText.includes("Saved sessions") || sessionsText.includes("No saved sessions")));
 
@@ -258,6 +258,7 @@ async function main(): Promise<void> {
       && instructions.includes("re-delegate if the handoff is wrong")
       && instructions.includes("For small models, recovery must be explicit")
       && instructions.includes("SUBAGENT_ABORTED")
+      && instructions.includes("interrupt the current stream")
       && instructions.includes("Do not run git commands")
       && instructions.includes("parallel")
       && instructions.includes("Clean-code target")
@@ -427,7 +428,7 @@ async function main(): Promise<void> {
   const patchedTuiSource = await readFile("node_modules/@ai-sdk/tui/dist/index.js", "utf8");
   results.push(recordCheck(
     "TUI tool and reasoning outputs use referenced box frames",
-    patchedTuiSource.includes("rich tui patch v11")
+    patchedTuiSource.includes("rich tui patch v12")
       && patchedTuiSource.includes("renderHarnessOutputBox")
       && patchedTuiSource.includes("harnessSeparator")
       && patchedTuiSource.includes("formatHarnessBashFrame")
@@ -435,8 +436,9 @@ async function main(): Promise<void> {
       && patchedTuiSource.includes("formatHarnessTodoFrame")
       && patchedTuiSource.includes("formatHarnessSubagentFrame")
       && patchedTuiSource.includes("Live status")
-      && patchedTuiSource.includes("Stop: Esc or Ctrl+C")
-      && patchedTuiSource.includes("summary compacted for main context")
+      && patchedTuiSource.includes("Interrupt: Esc/Ctrl+C")
+      && patchedTuiSource.includes("Interrupted · type what should happen next")
+      && patchedTuiSource.includes("streamWithoutPrompt = false")
       && patchedTuiSource.includes("formatHarnessReasoningFrame")
       && patchedTuiSource.includes("Think · live")
       && patchedTuiSource.includes("live reasoning stream")

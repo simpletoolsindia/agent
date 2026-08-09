@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v11 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v12 */";
 
 /**
  * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
@@ -42,6 +42,10 @@ export async function patchAiSdkTuiRenderer(): Promise<void> {
   patched = replaceIfPresent(patched, originalTopBorder(), patchedTopBorder());
   patched = replaceIfPresent(patched, originalBottomBorder(), patchedBottomBorder());
   patched = replaceIfPresent(patched, currentViewportProgress(), patchedViewportProgress());
+  patched = replaceIfPresent(patched, originalActiveControls(), patchedActiveControls());
+  patched = replaceIfPresent(patched, originalInterruptedStatus(), patchedInterruptedStatus());
+  patched = replaceIfPresent(patched, originalInterruptedStopCondition(), patchedInterruptedStopCondition());
+  patched = replaceIfPresent(patched, originalInterruptedRunnerCatch(), patchedInterruptedRunnerCatch());
   patched = stripHarnessToolHelpers(patched);
   patched = stripHarnessToolStatusBlocks(patched);
   patched = replaceIfPresent(patched, previousToolStatusLine(), originalToolStatusLine());
@@ -225,6 +229,74 @@ function patchedViewportProgress(): string {
     "  }",
     "  return `${bar}${colors.reset}${colors.dim}${\"░\".repeat(empty)}${colors.reset}`;",
     "}",
+  ].join("\n");
+}
+
+function originalActiveControls(): string {
+  return 'var activeControls = "↑/↓ · PgUp/PgDn · Esc/Ctrl+C";';
+}
+
+function patchedActiveControls(): string {
+  return 'var activeControls = "↑/↓ scroll · PgUp/PgDn · Esc/Ctrl+C interrupt";';
+}
+
+function originalInterruptedStatus(): string {
+  return '__privateSet(this, _status, __privateGet(this, _interrupted) ? "Interrupted" : (options == null ? void 0 : options.continueSession) ? `Done \\xB7 Enter another prompt \\xB7 ${activeControls}` : `Done \\xB7 ${doneControls}`);';
+}
+
+function patchedInterruptedStatus(): string {
+  return '__privateSet(this, _status, __privateGet(this, _interrupted) ? "Interrupted · type what should happen next" : (options == null ? void 0 : options.continueSession) ? `Done \\xB7 Enter another prompt \\xB7 ${activeControls}` : `Done \\xB7 ${doneControls}`);';
+}
+
+function originalInterruptedStopCondition(): string {
+  return "      if (__privateGet(this, _interrupted) || !(options == null ? void 0 : options.continueSession)) {";
+}
+
+function patchedInterruptedStopCondition(): string {
+  return "      if (!(options == null ? void 0 : options.continueSession)) {";
+}
+
+function originalInterruptedRunnerCatch(): string {
+  return [
+    "          upsertResponseMessage(messages, responseMessage, streamWithoutPrompt);",
+    "        }",
+    "      } catch (error) {",
+    "        if (isInterruptedError(error)) {",
+    "          return;",
+    "        }",
+    "        throw error;",
+    "      }",
+  ].join("\n");
+}
+
+function patchedInterruptedRunnerCatch(): string {
+  return [
+    "          upsertResponseMessage(messages, responseMessage, streamWithoutPrompt);",
+    "        }",
+    "      } catch (error) {",
+    "        if (isInterruptedError(error)) {",
+    "          if (!this.renderer.readPrompt) {",
+    "            return;",
+    "          }",
+    "          try {",
+    "            prompt = await this.renderer.readPrompt({",
+    "              title,",
+    "              initialPrompt: \"\"",
+    "            });",
+    "          } catch (nextError) {",
+    "            if (isInterruptedError(nextError)) {",
+    "              return;",
+    "            }",
+    "            throw nextError;",
+    "          }",
+    "          if (prompt == null) {",
+    "            return;",
+    "          }",
+    "          streamWithoutPrompt = false;",
+    "          continue;",
+    "        }",
+    "        throw error;",
+    "      }",
   ].join("\n");
 }
 
@@ -425,7 +497,7 @@ function harnessToolOutputHelpers(): string {
     "  const role = typeof input.role === \"string\" ? input.role : \"research\";",
     "  const goal = typeof input.taskGoal === \"string\" ? input.taskGoal : \"waiting for task\";",
     "  const refs = Array.isArray(input.referenceFiles) ? `${input.referenceFiles.length} references` : \"search/read only\";",
-    "  return renderHarnessOutputBox(`◇ Subagent: ${role} ⟦${status}⟧`, \"Live status\", [`Running: ${sliceMiddle(goal, 48)}`, `Doing: ${role} via search/read`, `Status: ${status}`, `Scope: ${refs}`, \"Stop: Esc or Ctrl+C\"]);",
+    "  return renderHarnessOutputBox(`◇ Subagent: ${role} ⟦${status}⟧`, \"Live status\", [`Running: ${sliceMiddle(goal, 48)}`, `Doing: ${role} via search/read`, `Status: ${status}`, `Scope: ${refs}`, \"Interrupt: Esc/Ctrl+C → prompt\"]);",
     "}",
     "function formatHarnessSubagentResultFrame(payload, output) {",
     "  const role = typeof payload.role === \"string\" ? payload.role : \"research\";",

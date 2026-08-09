@@ -34,7 +34,7 @@ const BASE_CODING_INSTRUCTIONS = [
   "A failed tool or subagent result must never end the agent loop by itself; only verified completion or a real external blocker can stop the loop.",
   "For PATH_NOT_FOUND, search or list the parent directory instead of stopping.",
   "Use subagent immediately for broad codebase research, unfamiliar UI flows, reviews, or non-mutating plans when the task touches multiple files or you would otherwise read many files.",
-  "When a subagent is running, the TUI shows its role, goal, current search/read scope, and the Esc/Ctrl+C stop control; if the user stops it, treat SUBAGENT_ABORTED as recoverable feedback.",
+  "When work is running, the TUI lets the user press Esc/Ctrl+C to interrupt the current stream, abort any active subagent, and type the next instruction immediately; treat SUBAGENT_ABORTED as recoverable feedback.",
   "Subagent can be called with a concise task goal and optional reference files; do not avoid it because the task is not fully mapped yet.",
   "Clean-code target: optimize for readable, maintainable TypeScript with clear names, narrow modules, explicit data contracts, low coupling, and SOLID principles.",
   "Prefer boring module-local functions and interfaces over unnecessary abstractions; add abstractions only when they reduce real coupling or protect invariants.",
