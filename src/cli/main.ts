@@ -48,6 +48,7 @@ type TuiCommandOptions = SharedAgentCommandOptions & {
   readonly reasoningDisplay?: string;
   readonly setup?: boolean;
   readonly resume?: boolean | string;
+  readonly newSession?: boolean;
   readonly sessionId?: string;
 };
 
@@ -164,7 +165,7 @@ function registerTuiCommand(command: Command): void {
       toolDisplay: display.toolDisplay,
       reasoningDisplay: display.reasoningDisplay,
       providerSetupMode: options.setup === false ? "never" : options.setup === true ? "always" : "auto",
-      resumeSession: options.resume !== false,
+      resumeSession: options.newSession === true ? false : options.resume !== false,
       resumeSessionId: typeof options.resume === "string" ? options.resume : undefined,
       sessionId: options.sessionId,
       skipModelConfigLoad: true,
@@ -196,6 +197,7 @@ function addTuiOptions(command: Command): Command {
     .option("--no-setup", "skip the provider setup UI")
     .option("--resume [id]", "resume the latest saved session or a specific session id", true)
     .option("--no-resume", "start without loading a saved session")
+    .option("--new-session", "start a fresh session without loading saved messages")
     .option("--session-id <id>", "stable id to use when saving this TUI session");
 }
 

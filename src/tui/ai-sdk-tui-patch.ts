@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v18 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v19 */";
 
 /**
  * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
@@ -13,12 +13,21 @@ export async function patchAiSdkTuiRenderer(): Promise<void> {
   const require = createRequire(import.meta.url);
   const path = require.resolve("@ai-sdk/tui");
   const source = await readFile(path, "utf8");
+  const alreadyPatched = source.includes("harness-tools rich tui patch");
   if (source.includes(PATCH_MARKER)) {
+    let repaired = source.replace(/\/\* harness-tools rich tui patch(?: v\d+)? \*\/\n?/g, "");
+    repaired = repaired.replace(/(\n\s*let harnessPromptHistoryIndex = harnessPromptHistory\.length;)+/g, "\n    let harnessPromptHistoryIndex = harnessPromptHistory.length;");
+    if (!repaired.includes("function bottomMenuLine(")) {
+      repaired = repaired.replace(
+        "function renderScreenViewport(state) {",
+        "function bottomMenuLine(content, width) { const inner = Math.max(4, width - 2); const visible = sliceVisible(content, inner); const padding = \" \".repeat(Math.max(0, inner - visibleLength(visible))); return `${colors.dim}╰${colors.reset}${visible}${padding}${colors.dim}╯${colors.reset}`; }\nfunction renderScreenViewport(state) {",
+      );
+    }
+    await writeFile(path, `${PATCH_MARKER}\n${repaired}`, "utf8");
     return;
   }
-
-  const alreadyPatched = source.includes("harness-tools rich tui patch");
   let patched = source.replace(/\/\* harness-tools rich tui patch(?: v\d+)? \*\/\n?/g, "");
+  patched = patched.replace(/\n\s*let harnessPromptHistoryIndex = harnessPromptHistory\.length;/g, "");
   if (!alreadyPatched) {
     patched = replaceOnce(patched, originalRenderMarkdown(), patchedRenderMarkdown());
     patched = replaceOnce(
@@ -329,22 +338,22 @@ function currentViewportProgress(): string {
 function patchedViewportProgress(): string {
   return [
     "function renderViewportProgress(message, width) {",
-    "  const contentWidth = Math.max(20, width - 2);",
-    "  const lower = message.toLowerCase();",
-    "  const busy = lower.includes(\"executing\") || lower.includes(\"processing\") || lower.includes(\"streaming\") || lower.includes(\"running\");",
-    "  const progress = lower.includes(\"executing\") ? 0.72 : lower.includes(\"processing\") ? 0.48 : lower.includes(\"streaming\") ? 0.32 : busy ? 0.62 : 1;",
+    "  const safeWidth = Math.max(20, width);",
+    "  const lower = String(message).toLowerCase();",
+    "  const busy = lower.includes(\"executing\") || lower.includes(\"processing\") || lower.includes(\"streaming\") || lower.includes(\"running\") || lower.includes(\"thinking\");",
     "  const spinnerFrames = [\"⠋\", \"⠙\", \"⠹\", \"⠸\", \"⠼\", \"⠴\", \"⠦\", \"⠧\", \"⠇\", \"⠏\"];",
     "  const spinner = busy ? spinnerFrames[Math.floor(Date.now() / 120) % spinnerFrames.length] : \"✓\";",
-    "  const barWidth = Math.max(8, Math.min(18, Math.floor(contentWidth / 5)));",
-    "  const bar = renderHarnessProgressBar(progress, barWidth);",
-    "  const inSubagent = lower.includes(\"subagent running\");",
-    "  const tip = inSubagent ? \"\" : busy ? \" · Esc interrupt · ↑/↓ scroll\" : \" · Enter prompt · ↑/↓ history\";",
-    "  return `${colors.reasoning}${spinner}${colors.reset} ${bar} ${colors.assistant}${message}${colors.reset}${colors.dim}${tip}${colors.reset}`;",
+    "  const label = `${spinner} ${message}`;",
+    "  const controls = busy ? \" · Esc interrupt · ↑/↓ scroll\" : \" · Enter send · ↑/↓ history\";",
+    "  const available = Math.max(4, safeWidth - visibleLength(controls) - 3);",
+    "  return `${colors.reasoning}${sliceVisible(label, available)}${colors.reset}${colors.dim}${controls}${colors.reset}`;",
     "}",
     "function renderPromptMenu(input, inputCursorVisible, width) {",
     "  const cursor = inputCursorVisible === false ? \" \" : \"█\";",
+    "  const controls = \" · Enter send · ↑/↓ history · paste ok\";",
+    "  const available = Math.max(4, width - visibleLength(controls) - 3);",
     "  const displayInput = formatHarnessPromptInput(input);",
-    "  return `${colors.user}›${colors.reset} ${displayInput}${cursor} ${colors.dim}· Enter send · ↑/↓ history · paste ok${colors.reset}`;",
+    "  return `${colors.user}›${colors.reset} ${sliceVisible(displayInput + cursor, available)}${colors.dim}${controls}${colors.reset}`;",
     "}",
     "function formatHarnessPromptInput(input) {",
     "  const lines = String(input).split(/\\r?\\n/);",
@@ -354,17 +363,12 @@ function patchedViewportProgress(): string {
     "  return lines.join(`${colors.dim} ↵ ${colors.reset}`);",
     "}",
     "function bottomMenuLine(content, width) {",
-    "  const inner = Math.max(0, width - 2);",
+    "  const inner = Math.max(4, width - 2);",
     "  const visible = sliceVisible(content, inner);",
     "  const padding = \" \".repeat(Math.max(0, inner - visibleLength(visible)));",
     "  return `${colors.dim}╰${colors.reset}${visible}${padding}${colors.dim}╯${colors.reset}`;",
     "}",
-    "function renderHarnessProgressBar(progress, width) {",
-    "  const filled = Math.max(1, Math.round(Math.max(0, Math.min(1, progress)) * width));",
-    "  const empty = Math.max(0, width - filled);",
-    "  return `${colors.dim}▐${colors.reset}${colors.reasoning}${\"█\".repeat(filled)}${colors.dim}${\"░\".repeat(empty)}${colors.reset}${colors.dim}▌${colors.reset}`;",
-    "}",
-  ].join("\n");
+  ].join("\\n");
 }
 
 function originalActiveControls(): string {

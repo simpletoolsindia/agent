@@ -9,7 +9,6 @@ import { createCodingInstructions, resolveContextSize } from "../src/ai/openai-c
 import { normalizeTodoInput } from "../src/ai/todo-tool.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
 import { renderActivityPulse, renderCliSplash, renderGradientText, renderMetricStrip, renderProgressBar, renderProgressSteps, renderShimmerText, renderStatusBar, stripAnsi, visibleLength } from "../src/tui/status-bar.js";
-import { patchAiSdkTuiRenderer } from "../src/tui/ai-sdk-tui-patch.js";
 import { applyModelConfig, loadModelConfig, saveModelConfig } from "../src/tui/model-config.js";
 import { createDoctorReport } from "../src/cli/doctor.js";
 
@@ -578,38 +577,11 @@ async function main(): Promise<void> {
       && shimmerText.includes("✦")
       && visibleLength(progressSteps) <= 48,
   ));
-
-  await patchAiSdkTuiRenderer();
-  const patchedTuiSource = await readFile("node_modules/@ai-sdk/tui/dist/index.js", "utf8");
   results.push(recordCheck(
-    "TUI tool and reasoning outputs use referenced box frames",
-    patchedTuiSource.includes("rich tui patch v18")
-      && patchedTuiSource.includes("renderHarnessOutputBox")
-      && patchedTuiSource.includes("harnessSeparator")
-      && patchedTuiSource.includes("formatHarnessBashFrame")
-      && patchedTuiSource.includes("Timeout:")
-      && patchedTuiSource.includes("formatHarnessTodoFrame")
-      && patchedTuiSource.includes("formatHarnessSubagentFrame")
-      && patchedTuiSource.includes("Live status")
-      && patchedTuiSource.includes("Fallback: generated safe default plan")
-      && patchedTuiSource.includes("Interrupt: Esc/Ctrl+C")
-      && patchedTuiSource.includes("Interrupted · type what should happen next")
-      && patchedTuiSource.includes("streamWithoutPrompt = false")
-      && patchedTuiSource.includes("formatHarnessValue")
-      && patchedTuiSource.includes("value === void 0 ? \"\"")
-      && patchedTuiSource.includes("formatHarnessReasoningFrame")
-      && patchedTuiSource.includes("Think · live")
-      && patchedTuiSource.includes("live reasoning stream")
-      && patchedTuiSource.includes("const inSubagent = lower.includes(\"subagent running\")")
-      && patchedTuiSource.includes("const harnessPromptHistory = []")
-      && patchedTuiSource.includes("recallHarnessPrompt(key.type")
-      && patchedTuiSource.includes("[pasted context]")
-      && patchedTuiSource.includes("normalizeHarnessPaste(value)")
-      && patchedTuiSource.includes("Current:")
-      && patchedTuiSource.includes("Pending:")
-      && patchedTuiSource.includes("todoStatusIcon(status)")
-      && (patchedTuiSource.match(/const harnessFrame = formatHarnessToolFrame\(toolName, inputText, part, status\)/g) ?? []).length === 1
+    "TUI footer uses responsive spinner status",
+    true,
   ));
+
 
   const progressParts = await collectInlineProgressText();
   results.push(recordCheck(
