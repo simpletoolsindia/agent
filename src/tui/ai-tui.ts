@@ -1,10 +1,8 @@
 import { runAgentTUI, type TerminalPartDisplayMode } from "@ai-sdk/tui";
 import { basename, resolve } from "node:path";
 import type { ApprovalMode } from "../ai/ai-tools.js";
-import {
-  createOpenAICompatibleCodingAgent,
-  type OpenAICompatibleCodingAgentOptions,
-} from "../ai/coding-agent.js";
+import type { OpenAICompatibleCodingAgentOptions } from "../ai/coding-agent.js";
+import { createSlashCommandAgent } from "./slash-agent.js";
 
 export type OpenAICompatibleAiTuiOptions = OpenAICompatibleCodingAgentOptions & {
   readonly contextSize?: number;
@@ -17,7 +15,8 @@ const DEFAULT_REASONING_DISPLAY: TerminalPartDisplayMode = "collapsed";
 
 /** Starts the interactive terminal UI for the OpenAI-compatible coding AI. */
 export async function runOpenAICompatibleAiTui(options: OpenAICompatibleAiTuiOptions): Promise<void> {
-  const { agent, approvalMode } = createOpenAICompatibleCodingAgent({
+  const approvalMode = options.approvalMode ?? "safe";
+  const agent = createSlashCommandAgent({
     ...options,
     loggerScope: "tui",
     loggerLevel: "warn",
@@ -35,5 +34,5 @@ export async function runOpenAICompatibleAiTui(options: OpenAICompatibleAiTuiOpt
 
 function formatTuiTitle(cwd: string, model: string, approvalMode: ApprovalMode): string {
   const workspaceName = basename(resolve(cwd)) || resolve(cwd);
-  return `Harness AI · ${workspaceName} · ${model} · ${approvalMode}`;
+  return `Harness AI · ${workspaceName} · ${model} · ${approvalMode} · /settings · /compact`;
 }

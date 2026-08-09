@@ -140,7 +140,7 @@ npm run tui -- \
   --ui-density compact
 ```
 
-The TUI title shows the workspace, model, and approval mode. `--context-size` defaults to `32768` and shows context usage in the title. Override it if your model has a different context window.
+The TUI title shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title. Override it if your model has a different context window.
 
 UI density presets:
 
@@ -155,6 +155,20 @@ Override a preset when needed:
 ```bash
 npm run tui -- --ui-density compact --tool-display auto-collapsed
 ```
+
+TUI slash commands run locally and do not spend an LLM call:
+
+| Command | Action |
+| --- | --- |
+| `/settings show` | Show active model, endpoint, approval, and step settings. |
+| `/settings model <id>` | Switch the model for future turns. |
+| `/settings base-url <url>` | Switch OpenAI-compatible endpoint for future turns. |
+| `/settings api-key <key>` | Update the API key; use `none` to unset it. |
+| `/settings approval safe\|auto` | Change approval mode without restarting the TUI. |
+| `/settings max-steps <count>` | Change the model/tool loop step budget. |
+| `/compact` | Drop slash-command chatter and prune older tool-heavy history for future turns. |
+
+Long model starts show a lightweight processing indicator before streaming begins.
 
 ## Important Ollama settings
 

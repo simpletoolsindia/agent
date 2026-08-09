@@ -80,7 +80,7 @@ addSharedAgentOptions(
 addTuiOptions(
   addSharedAgentOptions(
     program.command("tui")
-      .description("Open the interactive terminal UI"),
+      .description("Open the interactive terminal UI with /settings and /compact commands"),
   ),
 ).action(async (options: TuiCommandOptions) => {
   const display = resolveTuiDisplay(options);

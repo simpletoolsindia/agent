@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { createHarness, type ReadOutput, type SearchOutput, type BashOutput } from "../src/index.js";
 import { JsonConsoleLogger } from "../src/core/logger.js";
 import type { ToolResult } from "../src/core/registry.js";
+import { createSlashCommandAgent } from "../src/tui/slash-agent.js";
 
 const workspace = join(process.cwd(), ".correctness-workspace");
 
@@ -34,6 +35,15 @@ function recordFailureCode(name: string, expectedCode: string, result: ToolResul
   return {
     ...base,
     passed: !result.ok && result.code === expectedCode,
+  };
+}
+
+function recordCheck(name: string, passed: boolean): CaseResult {
+  return {
+    name,
+    expected: "success",
+    observed: passed ? "success" : "failure",
+    passed,
   };
 }
 
@@ -168,6 +178,13 @@ async function main(): Promise<void> {
     path: "../outside.txt",
   }, context)));
 
+  const slashAgent = createSlashCommandAgent({ cwd: workspace, model: "gpt-4o-mini", apiKey: "test" });
+  const settingsText = await collectSlashText(slashAgent, "/settings model qwen2.5-coder:7b approval auto max-steps 7");
+  results.push(recordCheck("slash settings updates runtime config", settingsText.includes("qwen2.5-coder:7b") && settingsText.includes("| approval | auto |")));
+
+  const compactText = await collectSlashText(slashAgent, "/compact");
+  results.push(recordCheck("slash compact returns local confirmation", compactText.includes("Context compacted")));
+
   const passed = results.filter((result) => result.passed).length;
   console.log(JSON.stringify({
     successRate: passed / results.length,
@@ -178,3 +195,14 @@ async function main(): Promise<void> {
 }
 
 await main();
+
+async function collectSlashText(agent: { readonly stream: (options: { readonly prompt: string }) => PromiseLike<unknown> }, prompt: string): Promise<string> {
+  const result = await agent.stream({ prompt }) as { readonly fullStream: AsyncIterable<unknown> };
+  let text = "";
+  for await (const part of result.fullStream) {
+    if (typeof part === "object" && part !== null && "type" in part && part.type === "text-delta" && "text" in part && typeof part.text === "string") {
+      text += part.text;
+    }
+  }
+  return text;
+}
