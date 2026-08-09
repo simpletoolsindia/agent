@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v15 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v16 */";
 
 /**
  * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
@@ -49,6 +49,15 @@ export async function patchAiSdkTuiRenderer(): Promise<void> {
   patched = replaceIfPresent(patched, originalInterruptedStatus(), patchedInterruptedStatus());
   patched = replaceIfPresent(patched, originalInterruptedStopCondition(), patchedInterruptedStopCondition());
   patched = replaceIfPresent(patched, originalInterruptedRunnerCatch(), patchedInterruptedRunnerCatch());
+  patched = replaceIfPresent(patched, originalPromptMenu(), patchedPromptMenu());
+  patched = replaceIfPresent(patched, originalReadPromptInitialInput(), patchedReadPromptInitialInput());
+  patched = replaceIfPresent(patched, originalReadPromptCharacterInput(), patchedReadPromptCharacterInput());
+  patched = replaceIfPresent(patched, originalReadPromptSubmit(), patchedReadPromptSubmit());
+  patched = replaceIfPresent(patched, originalReadPromptHistoryNavigation(), patchedReadPromptHistoryNavigation());
+  if (!patched.includes("const harnessPromptHistory = []")) {
+    patched = replaceOnce(patched, "function parseKey(chunk) {", `${harnessPromptHelpers()}\nfunction parseKey(chunk) {`);
+  }
+  patched = replaceIfPresent(patched, originalParseKeyDefault(), patchedParseKeyDefault());
   patched = stripHarnessToolHelpers(patched);
   patched = stripHarnessToolStatusBlocks(patched);
   patched = replaceIfPresent(patched, previousToolStatusLine(), originalToolStatusLine());
@@ -334,7 +343,15 @@ function patchedViewportProgress(): string {
     "}",
     "function renderPromptMenu(input, inputCursorVisible, width) {",
     "  const cursor = inputCursorVisible === false ? \" \" : \"█\";",
-    "  return `${colors.user}›${colors.reset} ${input}${cursor} ${colors.dim}· Enter send · Esc cancel · ↑/↓ scroll${colors.reset}`;",
+    "  const displayInput = formatHarnessPromptInput(input);",
+    "  return `${colors.user}›${colors.reset} ${displayInput}${cursor} ${colors.dim}· Enter send · ↑/↓ history · paste ok${colors.reset}`;",
+    "}",
+    "function formatHarnessPromptInput(input) {",
+    "  const lines = String(input).split(/\\r?\\n/);",
+    "  if (lines.length > 3) {",
+    "    return `${colors.reasoning}[pasted context]${colors.reset}${colors.dim} ${lines.length} lines · ${visibleLength(input).toLocaleString()} chars${colors.reset}`;",
+    "  }",
+    "  return lines.join(`${colors.dim} ↵ ${colors.reset}`);",
     "}",
     "function bottomMenuLine(content, width) {",
     "  const inner = Math.max(0, width - 2);",
@@ -812,5 +829,150 @@ function addScrollBarPatch(): string {
     "  });",
     "}",
     "clampScrollOffset_fn = function(scrollOffset) {",
+  ].join("\n");
+}
+
+
+function originalPromptMenu(): string {
+  return [
+    "function renderPromptMenu(input, inputCursorVisible, width) {",
+    "  const cursor = inputCursorVisible === false ? \" \" : \"█\";",
+    "  return `${colors.user}›${colors.reset} ${input}${cursor} ${colors.dim}· Enter send · Esc cancel · ↑/↓ scroll${colors.reset}`;",
+    "}",
+  ].join("\n");
+}
+
+function patchedPromptMenu(): string {
+  return patchedViewportProgress().split("\n").slice(13, 25).join("\n");
+}
+
+function originalReadPromptInitialInput(): string {
+  return '    __privateSet(this, _inputText, (_a = options == null ? void 0 : options.initialPrompt) != null ? _a : "");';
+}
+
+function patchedReadPromptInitialInput(): string {
+  return [
+    originalReadPromptInitialInput(),
+    "    let harnessPromptHistoryIndex = harnessPromptHistory.length;",
+  ].join("\n");
+}
+
+function originalReadPromptCharacterInput(): string {
+  return [
+    "          case \"character\":",
+    "            __privateSet(this, _inputText, __privateGet(this, _inputText) + key.value);",
+    "            __privateMethod(this, _TerminalRenderer_instances, showInputCursor_fn).call(this);",
+    "            __privateMethod(this, _TerminalRenderer_instances, paint_fn).call(this);",
+    "            break;",
+  ].join("\n");
+}
+
+function patchedReadPromptCharacterInput(): string {
+  return [
+    "          case \"character\":",
+    "            __privateSet(this, _inputText, appendHarnessPromptInput(__privateGet(this, _inputText), key.value));",
+    "            harnessPromptHistoryIndex = harnessPromptHistory.length;",
+    "            __privateMethod(this, _TerminalRenderer_instances, showInputCursor_fn).call(this);",
+    "            __privateMethod(this, _TerminalRenderer_instances, paint_fn).call(this);",
+    "            break;",
+  ].join("\n");
+}
+
+function originalReadPromptSubmit(): string {
+  return "            const prompt = __privateGet(this, _inputText);";
+}
+
+function patchedReadPromptSubmit(): string {
+  return [
+    "            const prompt = __privateGet(this, _inputText);",
+    "            rememberHarnessPrompt(prompt);",
+  ].join("\n");
+}
+
+function originalReadPromptHistoryNavigation(): string {
+  return [
+    "          case \"up\":",
+    "          case \"down\":",
+    "            __privateMethod(this, _TerminalRenderer_instances, handleScroll_fn).call(this, key.type);",
+    "            break;",
+  ].join("\n");
+}
+
+function patchedReadPromptHistoryNavigation(): string {
+  return [
+    "          case \"up\":",
+    "          case \"down\": {",
+    "            const nextInput = recallHarnessPrompt(key.type, __privateGet(this, _inputText), harnessPromptHistoryIndex);",
+    "            harnessPromptHistoryIndex = nextInput.index;",
+    "            __privateSet(this, _inputText, nextInput.text);",
+    "            __privateMethod(this, _TerminalRenderer_instances, showInputCursor_fn).call(this);",
+    "            __privateMethod(this, _TerminalRenderer_instances, paint_fn).call(this);",
+    "            break;",
+    "          }",
+  ].join("\n");
+}
+
+function originalParseKeyDefault(): string {
+  return [
+    "    default:",
+    "      if (value >= \" \" && value !== \"\\x7F\") {",
+    "        return { type: \"character\", value };",
+    "      }",
+    "      return { type: \"ignore\" };",
+  ].join("\n");
+}
+
+function patchedParseKeyDefault(): string {
+  return [
+    "    default: {",
+    "      const pasted = normalizeHarnessPaste(value);",
+    "      if (pasted !== void 0) {",
+    "        return { type: \"character\", value: pasted };",
+    "      }",
+    "      if (value >= \" \" && value !== \"\\x7F\") {",
+    "        return { type: \"character\", value };",
+    "      }",
+    "      return { type: \"ignore\" };",
+    "    }",
+  ].join("\n");
+}
+
+function harnessPromptHelpers(): string {
+  return [
+    "const harnessPromptHistory = [];",
+    "const HARNESS_PROMPT_HISTORY_LIMIT = 100;",
+    "function appendHarnessPromptInput(current, value) {",
+    "  return `${current}${value}`;",
+    "}",
+    "function rememberHarnessPrompt(prompt) {",
+    "  const trimmed = prompt.trim();",
+    "  if (trimmed.length === 0 || harnessPromptHistory[harnessPromptHistory.length - 1] === prompt) {",
+    "    return;",
+    "  }",
+    "  harnessPromptHistory.push(prompt);",
+    "  if (harnessPromptHistory.length > HARNESS_PROMPT_HISTORY_LIMIT) {",
+    "    harnessPromptHistory.shift();",
+    "  }",
+    "}",
+    "function recallHarnessPrompt(direction, current, index) {",
+    "  if (harnessPromptHistory.length === 0) {",
+    "    return { text: current, index };",
+    "  }",
+    "  if (direction === \"up\") {",
+    "    const nextIndex = Math.max(0, Math.min(index - 1, harnessPromptHistory.length - 1));",
+    "    return { text: harnessPromptHistory[nextIndex] || \"\", index: nextIndex };",
+    "  }",
+    "  const nextIndex = Math.min(harnessPromptHistory.length, index + 1);",
+    "  return { text: nextIndex >= harnessPromptHistory.length ? \"\" : harnessPromptHistory[nextIndex] || \"\", index: nextIndex };",
+    "}",
+    "function normalizeHarnessPaste(value) {",
+    "  if (value.startsWith(\"\\x1B[200~\") && value.endsWith(\"\\x1B[201~\")) {",
+    "    return value.slice(6, -6);",
+    "  }",
+    "  if (value.includes(\"\\x1B[200~\") || value.includes(\"\\x1B[201~\")) {",
+    "    return value.replace(/\\x1B\\[200~/g, \"\").replace(/\\x1B\\[201~/g, \"\");",
+    "  }",
+    "  return value.includes(\"\\n\") || value.includes(\"\\r\") ? value : void 0;",
+    "}",
   ].join("\n");
 }
