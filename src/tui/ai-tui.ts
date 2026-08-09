@@ -39,5 +39,5 @@ export async function runOpenAICompatibleAiTui(options: OpenAICompatibleAiTuiOpt
 
 function formatTuiTitle(cwd: string, model: string, approvalMode: ApprovalMode): string {
   const workspaceName = basename(resolve(cwd)) || resolve(cwd);
-  return `Harness AI · ${workspaceName} · ${model} · ${approvalMode} · /settings · /compact`;
+  return `Harness AI · ${workspaceName} · ${model} · ${approvalMode} · /settings · /compact · /agents`;
 }

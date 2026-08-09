@@ -12,7 +12,7 @@ import {
   type OpenAICompatibleCodingAgentOptions,
 } from "../ai/coding-agent.js";
 
-const SETTINGS_KEYS = ["model", "base-url", "api-key", "provider-name", "approval"] as const;
+const SETTINGS_KEYS = ["model", "base-url", "api-key", "provider-name", "approval", "agent-md", "skills-md"] as const;
 const COMPACT_KEEP_MESSAGES = 8;
 const PROCESSING_SPINNER_DELAY_MS = 250;
 const PROCESSING_SPINNER_INTERVAL_MS = 350;
@@ -167,6 +167,12 @@ class SlashCommandAgent {
       case "approval":
         this.settings = { ...this.settings, approvalMode: parseApprovalValue(value) };
         return `approval = ${this.settings.approvalMode ?? "safe"}`;
+      case "agent-md":
+        this.settings = { ...this.settings, agentMdPath: optionalValue(value) };
+        return `agent-md = ${this.settings.agentMdPath ?? "unset"}`;
+      case "skills-md":
+        this.settings = { ...this.settings, skillsMdPath: optionalValue(value) };
+        return `skills-md = ${this.settings.skillsMdPath ?? "unset"}`;
     }
   }
 
@@ -258,6 +264,12 @@ function parseSettingsKey(value: string): SettingsKey | undefined {
   if (normalized === "approval-mode" || normalized === "approvalmode") {
     return "approval";
   }
+  if (normalized === "agentmd" || normalized === "agent_md" || normalized === "agent-file") {
+    return "agent-md";
+  }
+  if (normalized === "skillsmd" || normalized === "skills_md" || normalized === "skills-file") {
+    return "skills-md";
+  }
 
   return SETTINGS_KEYS.find((key) => key === normalized);
 }
@@ -273,6 +285,8 @@ function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, comp
     `| api-key | ${settings.apiKey === undefined ? "unset" : "set"} |`,
     `| provider-name | ${settings.providerName ?? "openai-compatible"} |`,
     `| approval | ${settings.approvalMode ?? "safe"} |`,
+    `| agent-md | ${settings.agentMdPath ?? "unset"} |`,
+    `| skills-md | ${settings.skillsMdPath ?? "unset"} |`,
     `| compact | ${compactEnabled ? `enabled (${compactRuns})` : "not yet run"} |`,
     "",
     "Examples:",
@@ -280,6 +294,7 @@ function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, comp
     "```txt",
     "/settings model qwen2.5-coder:7b base-url http://localhost:11434/v1 api-key ollama",
     "/settings approval auto",
+    "/settings agent-md AGENT.md skills-md SKILLS.md",
     "/compact",
     "```",
   ].join("\n");
@@ -296,6 +311,8 @@ function slashHelpText(settings: RuntimeSettings, compactEnabled: boolean, compa
     "| `/settings base-url <url>` | Switch OpenAI-compatible endpoint. |",
     "| `/settings api-key <key>` | Update API key; `none` unsets it. |",
     "| `/settings approval safe|auto` | Change tool approval mode. |",
+    "| `/settings agent-md <path>` | Load additional agent instructions markdown for future turns; `none` unsets it. |",
+    "| `/settings skills-md <path>` | Load additional skills markdown for future turns; `none` unsets it. |",
     "| `/compact` | Prune old slash chatter and tool-heavy history for future turns. |",
     "| `/agents` | Show built-in read-only subagent modes and delegation examples. |",
     "",
@@ -318,7 +335,7 @@ function agentsHelpText(): string {
     "Example model-facing delegation:",
     "",
     "```json",
-    "{ \"role\": \"research\", \"task\": \"Map TUI startup flow and summarize files to edit\" }",
+    "{ \"role\": \"research\", \"taskGoal\": \"Map TUI startup flow\", \"currentFolderPath\": \"/workspace/project\", \"referenceFiles\": [{ \"path\": \"src/tui/ai-tui.ts\", \"reason\": \"TUI startup pattern\" }], \"implementationSteps\": [\"Inspect startup flow\"], \"validation\": [\"Main agent runs npm run build\"], \"expectedOutcome\": \"Relevant files and clean-code risks are summarized\" }",
     "```",
     "",
     "Edits still happen in the main agent with normal `update`/`write` approval.",

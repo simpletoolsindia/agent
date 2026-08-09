@@ -8,29 +8,75 @@ const SUBAGENT_TOOL_ORDER = ["search", "read"] as const;
 const SUBAGENT_INPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["task"],
+  required: ["taskGoal", "currentFolderPath", "referenceFiles", "implementationSteps", "validation", "expectedOutcome"],
   properties: {
-    task: {
-      type: "string",
-      minLength: 1,
-      description: "Focused task for the subagent. Include scope, files/directories, and expected summary format.",
-    },
     role: {
       type: "string",
       enum: ["research", "review", "plan"],
       description: "Subagent mode. research maps code, review critiques evidence, plan returns a non-mutating implementation plan.",
     },
+    taskGoal: {
+      type: "string",
+      minLength: 1,
+      description: "Concrete goal for this single sequential task.",
+    },
+    currentFolderPath: {
+      type: "string",
+      minLength: 1,
+      description: "Current workspace folder path supplied by the main agent.",
+    },
+    referenceFiles: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["path", "reason"],
+        properties: {
+          path: { type: "string", minLength: 1 },
+          reason: { type: "string", minLength: 1 },
+        },
+      },
+      description: "Files or existing logic/patterns the subagent should inspect before answering.",
+    },
+    implementationSteps: {
+      type: "array",
+      minItems: 1,
+      items: { type: "string", minLength: 1 },
+      description: "Ordered steps the main agent expects for this task.",
+    },
+    validation: {
+      type: "array",
+      minItems: 1,
+      items: { type: "string", minLength: 1 },
+      description: "Focused validation commands or scenarios the main agent must run after this task.",
+    },
+    expectedOutcome: {
+      type: "string",
+      minLength: 1,
+      description: "Observable outcome that proves this task is complete.",
+    },
   },
 } as const;
 
+type SubagentReferenceFile = {
+  readonly path: string;
+  readonly reason: string;
+};
+
 type SubagentInput = {
-  readonly task: string;
   readonly role?: "research" | "review" | "plan";
+  readonly taskGoal: string;
+  readonly currentFolderPath: string;
+  readonly referenceFiles: readonly SubagentReferenceFile[];
+  readonly implementationSteps: readonly string[];
+  readonly validation: readonly string[];
+  readonly expectedOutcome: string;
 };
 
 type SubagentOutput = {
   readonly role: "research" | "review" | "plan";
-  readonly task: string;
+  readonly taskGoal: string;
   readonly summary: string;
   readonly elapsedMs: number;
 };
@@ -46,9 +92,9 @@ export function createSubagentTool(
     title: "Subagent · Context offload",
     metadata: { safety: "read-only" },
     description: [
-      "Delegate context-heavy codebase research, review, or planning to a read-only subagent.",
-      "Use it for broad exploration before editing, parallelizable investigation, or keeping the main context clean.",
-      "The subagent can use only search and read, then returns a concise summary with evidence.",
+      "Delegate one detailed sequential task to a read-only subagent for research, review, or planning.",
+      "The main agent must include the current folder path, reference files, implementation steps, validation steps, and expected outcome.",
+      "The subagent can use only search and read, then returns a concise summary with evidence for the main agent to validate.",
     ].join(" "),
     inputSchema: jsonSchema(SUBAGENT_INPUT_SCHEMA as never),
     strict: true,
@@ -68,7 +114,7 @@ export function createSubagentTool(
           toolOrder: [...SUBAGENT_TOOL_ORDER],
           temperature: 0,
         }).generate({
-          prompt: parsed.task,
+          prompt: formatSubagentPrompt(parsed),
           abortSignal: executionOptions.abortSignal,
         });
 
@@ -76,7 +122,7 @@ export function createSubagentTool(
           ok: true,
           output: {
             role,
-            task: parsed.task,
+            taskGoal: parsed.taskGoal,
             summary: result.text,
             elapsedMs: performance.now() - started,
           } satisfies SubagentOutput,
@@ -132,11 +178,24 @@ function readonlyRegistryTool(name: "search" | "read", registry: ToolRegistry, c
   });
 }
 
+function formatSubagentPrompt(input: SubagentInput): string {
+  return [
+    `# Task goal\n${input.taskGoal}`,
+    `# Current folder path\n${input.currentFolderPath}`,
+    `# Reference files\n${input.referenceFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}`,
+    `# Implementation steps\n${input.implementationSteps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
+    `# Validation\n${input.validation.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
+    `# Expected outcome\n${input.expectedOutcome}`,
+  ].join("\n\n");
+}
+
 function subagentInstructions(role: SubagentOutput["role"]): string {
   const base = [
     "You are a read-only coding subagent running inside a TypeScript harness.",
     "Use only search and read. Never ask for approval. Never modify files. Never run commands.",
     "Search before reading unknown files. Prefer focused slices over full files.",
+    "Do not request or suggest git commands for repository context; the main agent should use search and read.",
+    "Evaluate plans against clean-code readability and SOLID boundaries: single responsibility, narrow interfaces, substitutable contracts, and dependency inversion.",
     "Your final answer is returned to the main agent; include exact paths, symbols, and evidence.",
   ];
 

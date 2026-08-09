@@ -6,10 +6,11 @@ import {
 import { createHarness } from "../index.js";
 import type { Logger } from "../core/logger.js";
 import { JsonConsoleLogger } from "../core/logger.js";
+import { loadInstructionDocuments, type ContextFileOptions } from "./context-files.js";
 import { createAiToolBundle, type ApprovalMode } from "./ai-tools.js";
 import {
-  CODING_INSTRUCTIONS,
   DEFAULT_CONTEXT_SIZE,
+  createCodingInstructions,
   createOpenAICompatibleChatModel,
   type OpenAICompatibleModelOptions,
 } from "./openai-compatible-runtime.js";
@@ -18,7 +19,7 @@ const TOOL_ORDER = ["subagent", "search", "read", "update", "write", "bash"] as 
 const COMPACTION_RATIO = 0.7;
 const RECENT_TOOL_MESSAGES_TO_KEEP = 5;
 
-export type OpenAICompatibleCodingAgentOptions = OpenAICompatibleModelOptions & {
+export type OpenAICompatibleCodingAgentOptions = OpenAICompatibleModelOptions & ContextFileOptions & {
   readonly cwd: string;
   readonly approvalMode?: ApprovalMode;
   readonly contextSize?: number;
@@ -46,10 +47,11 @@ export function createOpenAICompatibleCodingAgent(options: OpenAICompatibleCodin
     },
   });
   const contextSize = options.contextSize ?? DEFAULT_CONTEXT_SIZE;
+  const instructions = createCodingInstructions(options.cwd, loadInstructionDocuments(options.cwd, options));
 
   const agent = new ToolLoopAgent({
     model: createOpenAICompatibleChatModel(options),
-    instructions: CODING_INSTRUCTIONS,
+    instructions,
     tools: toolBundle.tools,
     toolApproval: toolBundle.approvals,
     toolOrder: [...TOOL_ORDER],
@@ -67,7 +69,7 @@ export function createOpenAICompatibleCodingAgent(options: OpenAICompatibleCodin
       return {
         toolOrder: [...TOOL_ORDER],
         temperature: stepNumber === 0 ? 0 : undefined,
-        ...(failureHint === undefined ? {} : { instructions: `${CODING_INSTRUCTIONS}\n\n${failureHint}` }),
+        ...(failureHint === undefined ? {} : { instructions: `${instructions}\n\n${failureHint}` }),
         ...(compactedMessages === undefined ? {} : { messages: compactedMessages }),
       };
     },

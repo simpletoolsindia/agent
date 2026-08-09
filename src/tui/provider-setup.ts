@@ -11,16 +11,20 @@ const CYAN = `${ESC}[36m`;
 const GREEN = `${ESC}[32m`;
 const YELLOW = `${ESC}[33m`;
 
-const FIELDS = ["model", "baseURL", "apiKey"] as const;
+const FIELDS = ["model", "baseURL", "apiKey", "agentMdPath", "skillsMdPath"] as const;
 const FIELD_LABELS: Record<ProviderSetupField, string> = {
   model: "Model name",
   baseURL: "Server URL",
   apiKey: "API key",
+  agentMdPath: "Agent.md path",
+  skillsMdPath: "Skills.md path",
 };
 const FIELD_HELP: Record<ProviderSetupField, string> = {
   model: "Examples: gpt-4o-mini, qwen2.5-coder:7b, llama3.1:8b",
   baseURL: "OpenAI-compatible /v1 endpoint. Leave blank for OpenAI default.",
   apiKey: "Stored only in memory for this run. Use ollama for local Ollama.",
+  agentMdPath: "Optional workspace markdown with project-specific agent instructions.",
+  skillsMdPath: "Optional workspace markdown with reusable skill instructions.",
 };
 
 type ProviderSetupField = typeof FIELDS[number];
@@ -29,12 +33,16 @@ type ProviderSetupValues = {
   readonly model: string;
   readonly baseURL?: string;
   readonly apiKey?: string;
+  readonly agentMdPath?: string;
+  readonly skillsMdPath?: string;
 };
 
 type MutableProviderSetupValues = {
   model: string;
   baseURL: string;
   apiKey: string;
+  agentMdPath: string;
+  skillsMdPath: string;
 };
 
 type ProviderSetupState = {
@@ -65,6 +73,8 @@ export async function maybeRunProviderSetup<T extends OpenAICompatibleCodingAgen
     model: options.model,
     baseURL: options.baseURL,
     apiKey: options.apiKey,
+    agentMdPath: options.agentMdPath,
+    skillsMdPath: options.skillsMdPath,
   });
 
   return resolveProviderSetupOptions(options, values);
@@ -79,6 +89,8 @@ export function resolveProviderSetupOptions<T extends OpenAICompatibleCodingAgen
     model: values.model.trim().length === 0 ? options.model : values.model.trim(),
     baseURL: normalizedOptionalValue(values.baseURL),
     apiKey: normalizedOptionalValue(values.apiKey),
+    agentMdPath: normalizedOptionalValue(values.agentMdPath),
+    skillsMdPath: normalizedOptionalValue(values.skillsMdPath),
   };
 }
 
@@ -92,6 +104,8 @@ export async function runProviderSetup(initial: ProviderSetupValues): Promise<Pr
       model: initial.model,
       baseURL: initial.baseURL ?? "",
       apiKey: initial.apiKey ?? "",
+      agentMdPath: initial.agentMdPath ?? "",
+      skillsMdPath: initial.skillsMdPath ?? "",
     },
     message: "Fill provider settings, then press Ctrl+S to start.",
   };
@@ -158,6 +172,7 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
       state: {
         ...state,
         values: {
+          ...state.values,
           model: state.values.model.trim().length === 0 || state.values.model === "gpt-4o-mini" ? "qwen2.5-coder:7b" : state.values.model,
           baseURL: "http://localhost:11434/v1",
           apiKey: "ollama",
@@ -238,8 +253,8 @@ export function renderProviderSetupScreen(state: ProviderSetupState, width: numb
   const contentWidth = safeWidth - 4;
   const rows = [
     topBorder(safeWidth, " Provider setup "),
-    framedLine(`${BOLD}Connect your OpenAI-compatible server${RESET}`, contentWidth),
-    framedLine(`${DIM}Edit fields directly. This stays in memory for the current TUI session.${RESET}`, contentWidth),
+    framedLine(`${BOLD}Configure the coding agent${RESET}`, contentWidth),
+    framedLine(`${DIM}Edit provider and markdown instruction fields before the current TUI session starts.${RESET}`, contentWidth),
     framedLine("", contentWidth),
     ...FIELDS.flatMap((field, index) => renderFieldRows(state, field, index, contentWidth)),
     framedLine("", contentWidth),
@@ -283,6 +298,8 @@ function toProviderSetupValues(values: MutableProviderSetupValues): ProviderSetu
     model: values.model.trim(),
     baseURL: normalizedOptionalValue(values.baseURL),
     apiKey: normalizedOptionalValue(values.apiKey),
+    agentMdPath: normalizedOptionalValue(values.agentMdPath),
+    skillsMdPath: normalizedOptionalValue(values.skillsMdPath),
   };
 }
 

@@ -23,6 +23,8 @@ type SharedAgentCommandOptions = {
   readonly apiKey?: string;
   readonly providerName?: string;
   readonly approvalMode: string;
+  readonly agentMd?: string;
+  readonly skillsMd?: string;
   readonly autoApprove?: boolean;
 };
 
@@ -102,6 +104,8 @@ function addSharedAgentOptions(command: Command): Command {
     .option("--api-key <key>", "API key", process.env.OPENAI_API_KEY)
     .option("--provider-name <name>", "provider name for logs", DEFAULT_PROVIDER_NAME)
     .option("--approval-mode <mode>", `approval mode: ${APPROVAL_MODE_VALUES.join("|")}`, DEFAULT_APPROVAL_MODE)
+    .option("--agent-md <path>", "load extra agent instructions from a workspace markdown file")
+    .option("--skills-md <path>", "load extra skill instructions from a workspace markdown file")
     .option("--auto-approve", "shortcut for --approval-mode auto");
 }
 
@@ -123,6 +127,8 @@ function toRuntimeOptions(options: SharedAgentCommandOptions) {
     baseURL: options.baseUrl,
     apiKey: options.apiKey,
     providerName: options.providerName,
+    agentMdPath: options.agentMd,
+    skillsMdPath: options.skillsMd,
     approvalMode: options.autoApprove === true ? "auto" as const : parseApprovalMode(options.approvalMode),
   };
 }

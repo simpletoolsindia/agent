@@ -40,26 +40,29 @@ npm --version
 
 ## Install Agent
 
+Run this from an already cloned repository:
+
 ```bash
-git clone https://github.com/simpletoolsindia/agent.git
-cd agent
-npm install
-npm run build
+cd /path/to/agent
+./install.sh
 ```
 
-Check that the CLI works:
+The installer:
+
+1. checks for Node.js 20+ and npm,
+2. installs dependencies with `npm ci` when `package-lock.json` exists,
+3. builds TypeScript,
+4. smoke-checks the CLI help output.
+
+Manual equivalent:
 
 ```bash
+npm ci
+npm run build
 npm run cli -- --help
 ```
 
-You should see:
-
-```txt
-Commands:
-  ai   Run one OpenAI-compatible LLM request
-  tui  Open the interactive terminal UI
-```
+You should see the `ai` and `tui` commands in the help output.
 
 ## Install and start Ollama
 
@@ -140,7 +143,7 @@ npm run tui -- \
   --ui-density compact
 ```
 
-The TUI opens a rich provider setup screen when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, and API key before the chat starts. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
+The TUI opens a rich setup screen when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, `agent.md`, and `skills.md` before the chat starts. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
 
 UI density presets:
 
@@ -162,11 +165,12 @@ Provider setup controls:
 | --- | --- |
 | `Tab` / `↓` | Move to the next field. |
 | `↑` | Move to the previous field. |
-| `Enter` | Move next, or start from the API key field. |
+| `Enter` | Move next, or start from the final markdown field. |
 | `Ctrl+S` | Start the TUI with the current values. |
-| `Ctrl+O` | Fill Ollama defaults: `qwen2.5-coder:7b`, `http://localhost:11434/v1`, `ollama`. |
+| `Ctrl+O` | Fill Ollama provider defaults: `qwen2.5-coder:7b`, `http://localhost:11434/v1`, `ollama`. |
 | `Ctrl+D` | Use the default OpenAI endpoint by clearing server URL and API key. |
 | `Ctrl+U` | Clear the active field. |
+| Markdown fields | Optional workspace-relative paths for extra agent and skill instructions. |
 
 Force the setup screen even when values are already supplied:
 
@@ -189,8 +193,10 @@ TUI slash commands run locally and do not spend an LLM call:
 | `/settings base-url <url>` | Switch OpenAI-compatible endpoint for future turns. |
 | `/settings api-key <key>` | Update the API key; use `none` to unset it. |
 | `/settings approval safe\|auto` | Change approval mode without restarting the TUI. |
+| `/settings agent-md <path>` | Load additional agent instructions markdown for future turns. |
+| `/settings skills-md <path>` | Load additional skills markdown for future turns. |
 | `/compact` | Drop slash-command chatter and prune older tool-heavy history for future turns. |
-| `/agents` | Show the built-in read-only subagent roles. |
+| `/agents` | Show the built-in read-only subagent roles and detailed task payload format. |
 
 Long model starts show a lightweight processing indicator before streaming begins.
 
@@ -282,6 +288,8 @@ Options:
 --api-key <key>         API key.
 --provider-name <name>  Name used in logs.
 --approval-mode <mode>  Approval mode: safe|auto. Default: safe.
+--agent-md <path>      Load extra agent instructions markdown from the workspace.
+--skills-md <path>     Load extra skills markdown from the workspace.
 --auto-approve          Shortcut for --approval-mode auto.
 -h, --help              Show help.
 ```
@@ -302,6 +310,8 @@ Options:
 --provider-name <name>       Name used in logs.
 --approval-mode <mode>       Approval mode: safe|auto. Default: safe.
 --auto-approve               Shortcut for --approval-mode auto.
+--agent-md <path>           Load extra agent instructions markdown from the workspace.
+--skills-md <path>          Load extra skills markdown from the workspace.
 --context-size <tokens>      Show context usage percentage in the TUI title. Default: 32768.
 --ui-density <mode>          UI preset: compact|normal|debug. Default: compact.
 --tool-display <mode>        Override tool cards: full|collapsed|auto-collapsed|hidden.
@@ -341,6 +351,10 @@ CLI and TUI use the same `ToolLoopAgent` setup:
 - automatic context compaction for long sessions
 - read-only subagent delegation for broad research, review, and non-mutating plans
 - no fixed loop step cap; the loop ends when the model returns a final response instead of another tool call
+- non-trivial tasks start with a sequential task list containing goal, current folder path, reference files, implementation steps, validation, expected outcome, and clean-code/SOLID notes
+- subagent calls are sequential: delegate one detailed task, inspect the result, validate the task, then continue
+- repository context comes from `search` and `read`; the agent is instructed not to run git commands just to provide context to the LLM
+- optional `--agent-md <path>` and `--skills-md <path>` append workspace markdown instructions to the agent prompt
 
 `bash` accepts one shell command string and runs it in the selected workspace:
 

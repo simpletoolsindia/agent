@@ -5,6 +5,8 @@ import { JsonConsoleLogger } from "../src/core/logger.js";
 import type { ToolResult } from "../src/core/registry.js";
 import { createSlashCommandAgent } from "../src/tui/slash-agent.js";
 import { renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
+import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js";
+import { loadInstructionDocuments } from "../src/ai/context-files.js";
 
 const workspace = join(process.cwd(), ".correctness-workspace");
 
@@ -179,9 +181,24 @@ async function main(): Promise<void> {
     path: "../outside.txt",
   }, context)));
 
+  mustOutput(await registry.run("write", {
+    path: "AGENT.md",
+    content: "# Agent instructions\nKeep modules cohesive.\n",
+  }, context));
+  mustOutput(await registry.run("write", {
+    path: "SKILLS.md",
+    content: "# Skills\nUse focused validation.\n",
+  }, context));
+
   const slashAgent = createSlashCommandAgent({ cwd: workspace, model: "gpt-4o-mini", apiKey: "test" });
   const settingsText = await collectSlashText(slashAgent, "/settings model qwen2.5-coder:7b approval auto");
   results.push(recordCheck("slash settings updates runtime config", settingsText.includes("qwen2.5-coder:7b") && settingsText.includes("| approval | auto |")));
+
+  const contextSettingsText = await collectSlashText(slashAgent, "/settings agent-md AGENT.md skills-md SKILLS.md");
+  results.push(recordCheck(
+    "slash settings updates markdown context files",
+    contextSettingsText.includes("| agent-md | AGENT.md |") && contextSettingsText.includes("| skills-md | SKILLS.md |"),
+  ));
 
   const compactText = await collectSlashText(slashAgent, "/compact");
   results.push(recordCheck("slash compact returns local confirmation", compactText.includes("Context compacted")));
@@ -189,24 +206,62 @@ async function main(): Promise<void> {
   const agentsText = await collectSlashText(slashAgent, "/agents");
   results.push(recordCheck("slash agents documents subagent roles", agentsText.includes("Built-in subagents") && agentsText.includes("research") && agentsText.includes("review") && agentsText.includes("plan")));
 
-  const setupOptions = resolveProviderSetupOptions({ cwd: workspace, model: "gpt-4o-mini", baseURL: undefined, apiKey: "old" }, {
+  const instructions = createCodingInstructions(workspace);
+  results.push(recordCheck(
+    "coding instructions include sequential clean-code workflow",
+    instructions.includes(`Current folder path: ${workspace}`)
+      && instructions.includes("Delegate at most one task to subagent at a time")
+      && instructions.includes("Do not run git commands")
+      && instructions.includes("Clean-code target"),
+  ));
+
+  const contextInstructions = createCodingInstructions(workspace, loadInstructionDocuments(workspace, {
+    agentMdPath: "AGENT.md",
+    skillsMdPath: "SKILLS.md",
+  }));
+  results.push(recordCheck(
+    "markdown context options load instructions",
+    contextInstructions.includes("Additional context from agent.md")
+      && contextInstructions.includes("Keep modules cohesive")
+      && contextInstructions.includes("Additional context from skills.md")
+      && contextInstructions.includes("Use focused validation"),
+  ));
+
+  const setupOptions = resolveProviderSetupOptions({ cwd: workspace, model: "gpt-4o-mini", baseURL: undefined, apiKey: "old", agentMdPath: undefined, skillsMdPath: undefined }, {
     model: "qwen2.5-coder:7b",
     baseURL: " http://localhost:11434/v1 ",
     apiKey: " ollama ",
+    agentMdPath: " AGENT.md ",
+    skillsMdPath: " SKILLS.md ",
   });
   results.push(recordCheck(
-    "provider setup resolves LLM config",
-    setupOptions.model === "qwen2.5-coder:7b" && setupOptions.baseURL === "http://localhost:11434/v1" && setupOptions.apiKey === "ollama",
+    "provider setup resolves LLM and markdown config",
+    setupOptions.model === "qwen2.5-coder:7b"
+      && setupOptions.baseURL === "http://localhost:11434/v1"
+      && setupOptions.apiKey === "ollama"
+      && setupOptions.agentMdPath === "AGENT.md"
+      && setupOptions.skillsMdPath === "SKILLS.md",
   ));
 
   const setupScreen = renderProviderSetupScreen({
-    activeField: 1,
-    values: { model: "qwen2.5-coder:7b", baseURL: "http://localhost:11434/v1", apiKey: "ollama" },
+    activeField: 3,
+    values: {
+      model: "qwen2.5-coder:7b",
+      baseURL: "http://localhost:11434/v1",
+      apiKey: "ollama",
+      agentMdPath: "AGENT.md",
+      skillsMdPath: "SKILLS.md",
+    },
     message: "Ready",
   }, 88);
   results.push(recordCheck(
     "provider setup renders rich fields",
-    setupScreen.includes("Provider setup") && setupScreen.includes("Server URL") && setupScreen.includes("API key") && setupScreen.includes("Ctrl+O"),
+    setupScreen.includes("Provider setup")
+      && setupScreen.includes("Server URL")
+      && setupScreen.includes("API key")
+      && setupScreen.includes("Agent.md path")
+      && setupScreen.includes("Skills.md path")
+      && setupScreen.includes("Ctrl+O"),
   ));
 
   const passed = results.filter((result) => result.passed).length;
