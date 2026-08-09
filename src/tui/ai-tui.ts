@@ -29,9 +29,7 @@ export async function runOpenAICompatibleAiTui(options: OpenAICompatibleAiTuiOpt
   const configuredOptions = await maybeRunProviderSetup(loadedOptions, {
     mode: loadedOptions.providerSetupMode ?? "auto",
   });
-  if (configuredOptions.apiKey !== undefined || configuredOptions.baseURL !== undefined || configuredOptions.providerSetupMode === "always") {
-    await saveModelConfig(configuredOptions);
-  }
+  await saveModelConfig(configuredOptions);
   await patchAiSdkTuiRenderer();
   // Dynamic import is intentional: patchAiSdkTuiRenderer must update the dependency before module evaluation.
   const { runAgentTUI } = await import("@ai-sdk/tui");

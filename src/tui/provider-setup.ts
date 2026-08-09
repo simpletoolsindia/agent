@@ -15,9 +15,10 @@ const YELLOW = `${ESC}[33m`;
 const BLUE = `${ESC}[34m`;
 const ACCENT_BLUE = `${ESC}[94m`;
 
-const FIELDS = ["model", "baseURL", "apiKey", "approvalMode", "agentMdPath", "skillsMdPath"] as const;
+const FIELDS = ["model", "contextSize", "baseURL", "apiKey", "approvalMode", "agentMdPath", "skillsMdPath"] as const;
 const FIELD_LABELS: Record<ProviderSetupField, string> = {
   model: "Model name",
+  contextSize: "Context tokens",
   baseURL: "Server URL",
   apiKey: "API key",
   approvalMode: "Approval mode",
@@ -26,6 +27,7 @@ const FIELD_LABELS: Record<ProviderSetupField, string> = {
 };
 const FIELD_HELP: Record<ProviderSetupField, string> = {
   model: "Examples: gpt-4o-mini, qwen2.5-coder:7b, llama3.1:8b",
+  contextSize: "Optional token limit override. Leave blank to auto-detect from model.",
   baseURL: "OpenAI-compatible /v1 endpoint. Leave blank for OpenAI default.",
   apiKey: "Stored only in memory for this run. Use ollama for local Ollama.",
   approvalMode: "safe asks before write/bash; auto runs approved tools without prompting.",
@@ -40,6 +42,7 @@ type ProviderSetupValues = {
   readonly baseURL?: string;
   readonly apiKey?: string;
   readonly approvalMode?: ApprovalMode;
+  readonly contextSize?: number;
   readonly agentMdPath?: string;
   readonly skillsMdPath?: string;
 };
@@ -49,6 +52,7 @@ type MutableProviderSetupValues = {
   baseURL: string;
   apiKey: string;
   approvalMode: string;
+  contextSize: string;
   agentMdPath: string;
   skillsMdPath: string;
 };
@@ -84,6 +88,7 @@ export async function maybeRunProviderSetup<T extends OpenAICompatibleCodingAgen
     apiKey: options.apiKey,
     agentMdPath: options.agentMdPath,
     skillsMdPath: options.skillsMdPath,
+    contextSize: options.contextSize,
     approvalMode: options.approvalMode,
   });
 
@@ -100,6 +105,7 @@ export function resolveProviderSetupOptions<T extends OpenAICompatibleCodingAgen
     baseURL: normalizedOptionalValue(values.baseURL),
     apiKey: normalizedOptionalValue(values.apiKey),
     approvalMode: normalizedApprovalMode(values.approvalMode, options.approvalMode),
+    contextSize: normalizedPositiveInteger(values.contextSize, options.contextSize),
     agentMdPath: normalizedOptionalValue(values.agentMdPath),
     skillsMdPath: normalizedOptionalValue(values.skillsMdPath),
   };
@@ -116,6 +122,7 @@ export async function runProviderSetup(initial: ProviderSetupValues): Promise<Pr
       baseURL: initial.baseURL ?? "",
       apiKey: initial.apiKey ?? "",
       approvalMode: initial.approvalMode ?? "safe",
+      contextSize: initial.contextSize?.toString() ?? "",
       agentMdPath: initial.agentMdPath ?? "",
       skillsMdPath: initial.skillsMdPath ?? "",
     },
@@ -231,6 +238,17 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
       },
     };
   }
+  if (FIELDS[state.activeField] === "approvalMode" && (key === " " || key === "\x1B[C" || key === "\x1B[D")) {
+    const nextApproval = normalizedApprovalMode(state.values.approvalMode, "safe") === "auto" ? "safe" : "auto";
+    return {
+      type: "state",
+      state: {
+        ...state,
+        values: { ...state.values, approvalMode: nextApproval },
+        message: `Approval mode set to ${nextApproval}.`,
+      },
+    };
+  }
   if (key === "\t" || key === "\x1B[B") {
     return {
       type: "state",
@@ -265,6 +283,12 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
   }
   if (key.length > 0 && key >= " " && key !== "\x7F") {
     const field = FIELDS[state.activeField];
+    if (field === "approvalMode") {
+      const nextApproval = key.toLowerCase() === "a" ? "auto" : key.toLowerCase() === "s" ? "safe" : undefined;
+      return nextApproval === undefined
+        ? { type: "state", state: { ...state, message: "Use Space/←/→ to choose safe or auto." } }
+        : { type: "state", state: { ...state, values: { ...state.values, approvalMode: nextApproval }, message: `Approval mode set to ${nextApproval}.` } };
+    }
     return {
       type: "state",
       state: {
@@ -284,11 +308,13 @@ export function renderProviderSetupScreen(state: ProviderSetupState, width: numb
   const approval = normalizedApprovalMode(state.values.approvalMode, "safe") ?? "safe";
   const connectionState = state.values.baseURL.trim().length === 0 ? "OpenAI default" : "custom /v1";
   const docsState = [state.values.agentMdPath, state.values.skillsMdPath].filter((value) => value.trim().length > 0).length;
+  const contextState = normalizedPositiveInteger(state.values.contextSize, undefined)?.toLocaleString() ?? "auto";
   const rows = [
     topBorder(safeWidth, ` ${renderGradientText("Coding Agent setup", frame / 24)} `),
     framedLine(`${renderGradientText("Modern five-tool workspace", frame / 30)} ${DIM}rounded cards · profile chips · stage rail · live validation${RESET}`, contentWidth),
     framedLine(renderMetricStrip([
       { label: "model", value: state.values.model.trim().length === 0 ? "unset" : state.values.model.trim(), tone: "busy" },
+      { label: "ctx", value: contextState, tone: contextState === "auto" ? "idle" : "success" },
       { label: "endpoint", value: connectionState, tone: connectionState === "custom /v1" ? "success" : "idle" },
       { label: "approval", value: approval, tone: approval === "auto" ? "success" : "warn" },
       { label: "docs", value: `${docsState}/2`, tone: docsState === 0 ? "idle" : "success" },
@@ -297,9 +323,9 @@ export function renderProviderSetupScreen(state: ProviderSetupState, width: numb
     framedLine(renderActivityPulse("Setup", "Keyboard-first setup with animated state, shortcuts, and compact cards.", contentWidth, frame, "busy"), contentWidth),
     framedLine("", contentWidth),
     renderSectionTitle("Profile cards", contentWidth),
-    ...FIELDS.slice(0, 4).flatMap((field, index) => renderFieldRows(state, field, index, contentWidth, frame)),
+    ...FIELDS.slice(0, 5).flatMap((field, index) => renderFieldRows(state, field, index, contentWidth, frame)),
     renderSectionTitle("Workspace context", contentWidth),
-    ...FIELDS.slice(4).flatMap((field, offset) => renderFieldRows(state, field, offset + 4, contentWidth, frame)),
+    ...FIELDS.slice(5).flatMap((field, offset) => renderFieldRows(state, field, offset + 5, contentWidth, frame)),
     framedLine("", contentWidth),
     renderSectionTitle("Command deck", contentWidth),
     framedLine(renderShortcutRow(["Tab/↓ next", "↑ previous", "Enter next/start", "Ctrl+S start"], contentWidth), contentWidth),
@@ -327,6 +353,12 @@ function validateProviderSetup(state: ProviderSetupState):
       state: { ...state, activeField: FIELDS.indexOf("approvalMode"), message: "Approval mode must be safe or auto." },
     };
   }
+  if (state.values.contextSize.trim().length > 0 && normalizedPositiveInteger(state.values.contextSize, undefined) === undefined) {
+    return {
+      type: "state",
+      state: { ...state, activeField: FIELDS.indexOf("contextSize"), message: "Context tokens must be a positive integer or blank for auto." },
+    };
+  }
   return { type: "submit" };
 }
 
@@ -334,7 +366,7 @@ function renderFieldRows(state: ProviderSetupState, field: ProviderSetupField, i
   const active = state.activeField === index;
   const marker = active ? activeMarker(frame) : `${DIM}◇${RESET}`;
   const rawValue = state.values[field];
-  const visibleValue = field === "apiKey" && rawValue.length > 0 ? "•".repeat(Math.min(rawValue.length, 32)) : rawValue;
+  const visibleValue = visibleFieldValue(field, rawValue, active);
   const value = visibleValue.length === 0 ? `${DIM}<empty>${RESET}` : active ? `${CYAN}${visibleValue}${RESET}` : visibleValue;
   const indexText = `${DIM}${index + 1}/${FIELDS.length}${RESET}`;
   return [
@@ -343,12 +375,26 @@ function renderFieldRows(state: ProviderSetupState, field: ProviderSetupField, i
   ];
 }
 
+function visibleFieldValue(field: ProviderSetupField, rawValue: string, active: boolean): string {
+  if (field === "apiKey" && rawValue.length > 0) {
+    return "•".repeat(Math.min(rawValue.length, 32));
+  }
+  if (field === "approvalMode") {
+    const current = normalizedApprovalMode(rawValue, "safe") ?? "safe";
+    const safe = current === "safe" ? `${BOLD}safe${RESET}` : "safe";
+    const auto = current === "auto" ? `${BOLD}auto${RESET}` : "auto";
+    return active ? `▾ ${safe} / ${auto}` : current;
+  }
+  return rawValue;
+}
+
 function toProviderSetupValues(values: MutableProviderSetupValues): ProviderSetupValues {
   return {
     model: values.model.trim(),
     baseURL: normalizedOptionalValue(values.baseURL),
     apiKey: normalizedOptionalValue(values.apiKey),
     approvalMode: normalizedApprovalMode(values.approvalMode, "safe") ?? "safe",
+    contextSize: normalizedPositiveInteger(values.contextSize, undefined),
     agentMdPath: normalizedOptionalValue(values.agentMdPath),
     skillsMdPath: normalizedOptionalValue(values.skillsMdPath),
   };
@@ -371,6 +417,18 @@ function normalizedApprovalMode(value: string | undefined, fallback: ApprovalMod
     return trimmed;
   }
   return undefined;
+}
+
+function normalizedPositiveInteger(value: string | number | undefined, fallback: number | undefined): number | undefined {
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value > 0 ? value : fallback;
+  }
+  const trimmed = value?.trim();
+  if (trimmed === undefined || trimmed.length === 0 || trimmed.toLowerCase() === "none" || trimmed.toLowerCase() === "auto") {
+    return fallback;
+  }
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isInteger(parsed) && parsed > 0 && parsed.toString() === trimmed ? parsed : undefined;
 }
 
 function topBorder(width: number, title: string): string {

@@ -225,6 +225,12 @@ async function main(): Promise<void> {
   const settingsText = await collectSlashText(slashAgent, "/settings model qwen2.5-coder:7b approval auto");
   results.push(recordCheck("slash settings updates runtime config", settingsText.includes("qwen2.5-coder:7b") && settingsText.includes("| approval | auto |")));
 
+  const slashContextSizeText = await collectSlashText(slashAgent, "/settings context-size 65536");
+  results.push(recordCheck(
+    "slash settings updates context size",
+    slashContextSizeText.includes("| context-size | 65536 |"),
+  ));
+
   const autoSettingsText = await collectSlashText(slashAgent, "/settings auto");
   results.push(recordCheck("slash settings has easy auto approval", autoSettingsText.includes("auto mode enabled") && autoSettingsText.includes("| approval | auto |")));
 
@@ -249,6 +255,7 @@ async function main(): Promise<void> {
       && savedSlashConfig.apiKey === "ollama"
       && savedSlashConfig.approvalMode === "auto"
       && savedSlashConfig.agentMdPath === "AGENT.md"
+      && savedSlashConfig.contextSize === 65536
       && savedSlashConfig.skillsMdPath === "SKILLS.md",
   ));
 
@@ -336,11 +343,12 @@ async function main(): Promise<void> {
       && doctorReport.includes("harness tui --setup"),
   ));
 
-  const setupOptions = resolveProviderSetupOptions({ cwd: workspace, model: "gpt-4o-mini", baseURL: undefined, apiKey: "old", approvalMode: undefined, agentMdPath: undefined, skillsMdPath: undefined }, {
+  const setupOptions = resolveProviderSetupOptions({ cwd: workspace, model: "gpt-4o-mini", baseURL: undefined, apiKey: "old", approvalMode: undefined, contextSize: undefined, agentMdPath: undefined, skillsMdPath: undefined }, {
     model: "qwen2.5-coder:7b",
     baseURL: " http://localhost:11434/v1 ",
     apiKey: " ollama ",
     approvalMode: "auto",
+    contextSize: 65536,
     agentMdPath: " AGENT.md ",
     skillsMdPath: " SKILLS.md ",
   });
@@ -351,19 +359,22 @@ async function main(): Promise<void> {
       && setupOptions.apiKey === "ollama"
       && setupOptions.agentMdPath === "AGENT.md"
       && setupOptions.approvalMode === "auto"
+      && setupOptions.contextSize === 65536
       && setupOptions.skillsMdPath === "SKILLS.md",
   ));
 
   const modelConfigPath = join(workspace, "saved-model.json");
   await saveModelConfig(setupOptions, modelConfigPath);
   const savedSetupConfig = await loadModelConfig(modelConfigPath);
-  const loadedSetupOptions = applyModelConfig({ cwd: workspace, model: "gpt-4o-mini", approvalMode: "safe" as "safe" | "auto" }, savedSetupConfig);
+  const loadedSetupOptions = applyModelConfig({ cwd: workspace, model: "gpt-4o-mini", approvalMode: "safe" as "safe" | "auto", contextSize: undefined }, savedSetupConfig);
   results.push(recordCheck(
     "provider setup saves and reloads model config",
     savedSetupConfig?.model === "qwen2.5-coder:7b"
       && savedSetupConfig.baseURL === "http://localhost:11434/v1"
       && savedSetupConfig.apiKey === "ollama"
       && loadedSetupOptions.model === "qwen2.5-coder:7b"
+      && savedSetupConfig.contextSize === 65536
+      && loadedSetupOptions.contextSize === 65536
       && loadedSetupOptions.approvalMode === "auto",
   ));
 
@@ -373,6 +384,7 @@ async function main(): Promise<void> {
       model: "qwen2.5-coder:7b",
       baseURL: "http://localhost:11434/v1",
       apiKey: "ollama",
+      contextSize: "65536",
       approvalMode: "safe",
       agentMdPath: "AGENT.md",
       skillsMdPath: "SKILLS.md",
@@ -396,6 +408,7 @@ async function main(): Promise<void> {
       model: "qwen2.5-coder:7b",
       baseURL: "http://localhost:11434/v1",
       apiKey: "ollama",
+      contextSize: "65536",
       approvalMode: "safe",
       agentMdPath: "AGENT.md",
       skillsMdPath: "SKILLS.md",
@@ -407,10 +420,11 @@ async function main(): Promise<void> {
     setupScreen !== animatedSetupScreen && animatedSetupScreen.includes("⠙"),
   ));
 
-  const autoApprovalSetup = reduceProviderSetupInput({
-    activeField: 3,
+  const dropdownApprovalSetup = reduceProviderSetupInput({
+    activeField: 4,
     values: {
       model: "gpt-4o-mini",
+      contextSize: "",
       baseURL: "",
       apiKey: "",
       approvalMode: "safe",
@@ -418,10 +432,22 @@ async function main(): Promise<void> {
       skillsMdPath: "",
     },
     message: "Ready",
-  }, "\u0001");
+  }, " ");
+  const dropdownScreen = stripAnsi(renderProviderSetupScreen(dropdownApprovalSetup.type === "state" ? dropdownApprovalSetup.state : {
+    activeField: 4,
+    values: {
+      model: "gpt-4o-mini",
+      contextSize: "",
+      baseURL: "",
+      apiKey: "",
+      approvalMode: "auto",
+      agentMdPath: "",
+      skillsMdPath: "",
+    },
+  }, 88));
   results.push(recordCheck(
-    "provider setup toggles auto approval",
-    autoApprovalSetup.type === "state" && autoApprovalSetup.state.values.approvalMode === "auto",
+    "provider setup dropdown toggles auto approval",
+    dropdownApprovalSetup.type === "state" && dropdownApprovalSetup.state.values.approvalMode === "auto" && dropdownScreen.includes("▾ safe / auto"),
   ));
 
   const statusBar = renderStatusBar("Processing", "Waiting for model response or tool stream", 48, "busy");

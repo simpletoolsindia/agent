@@ -11,11 +11,12 @@ import {
   type OpenAICompatibleCodingAgent,
   type OpenAICompatibleCodingAgentOptions,
 } from "../ai/coding-agent.js";
+import { resolveContextSize } from "../ai/openai-compatible-runtime.js";
 import { renderActivityPulse, renderCliPanel, renderKeyValueDeck, renderMetricStrip, renderProgressSteps, renderStatusBar } from "./status-bar.js";
 import { formatSessionList, listSessions, loadSession, saveSession } from "./session-store.js";
 import { saveModelConfig } from "./model-config.js";
 
-const SETTINGS_KEYS = ["model", "base-url", "api-key", "provider-name", "approval", "agent-md", "skills-md"] as const;
+const SETTINGS_KEYS = ["model", "context-size", "base-url", "api-key", "provider-name", "approval", "agent-md", "skills-md"] as const;
 const COMPACT_KEEP_MESSAGES = 8;
 const PROCESSING_NOTICE_DELAY_MS = 250;
 const SUGGESTION_INTERVAL_MS = 2_500;
@@ -236,8 +237,8 @@ class SlashCommandAgent {
     if (updates.length === 0) {
       return {
         text: [
-          "## Settings command not understood",
-          "Use `/settings menu`, `/settings ollama`, or `/settings model <id> base-url <url> api-key <key>`.",
+          "Use `/settings menu`, `/settings ollama`, or `/settings model <id> context-size <tokens> base-url <url> api-key <key>`.",
+          "`context-size auto` clears the override and returns to model auto-detection.",
           `Known keys: ${SETTINGS_KEYS.join(", ")}.`,
         ].join("\n\n"),
       };
@@ -280,6 +281,9 @@ class SlashCommandAgent {
       case "model":
         this.settings = { ...this.settings, model: requireValue(key, value) };
         return `model = ${this.settings.model}`;
+      case "context-size":
+        this.settings = { ...this.settings, contextSize: parseContextSizeValue(value) };
+        return `context-size = ${this.settings.contextSize?.toString() ?? "auto"}`;
       case "base-url":
         this.settings = { ...this.settings, baseURL: optionalValue(value) };
         return `base-url = ${this.settings.baseURL ?? "default OpenAI endpoint"}`;
@@ -387,6 +391,9 @@ function parseSettingsKey(value: string): SettingsKey | undefined {
   if (normalized === "apikey" || normalized === "api_key") {
     return "api-key";
   }
+  if (normalized === "context" || normalized === "contextsize" || normalized === "context_size" || normalized === "context-window" || normalized === "contextwindow") {
+    return "context-size";
+  }
   if (normalized === "provider" || normalized === "provider_name" || normalized === "provider-name") {
     return "provider-name";
   }
@@ -405,11 +412,13 @@ function parseSettingsKey(value: string): SettingsKey | undefined {
 
 function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, compactRuns: number): string {
   const docsLoaded = [settings.agentMdPath, settings.skillsMdPath].filter((value) => value !== undefined).length;
+  const effectiveContextSize = resolveContextSize(settings.model, settings.contextSize);
   return [
     "## Settings cockpit",
     "",
     renderKeyValueDeck("Active profile", [
       { label: "model", value: settings.model, tone: "busy" },
+      { label: "ctx", value: `${effectiveContextSize.toLocaleString()}${settings.contextSize === undefined ? " auto" : ""}`, tone: settings.contextSize === undefined ? "idle" : "success" },
       { label: "endpoint", value: settings.baseURL ?? "OpenAI default", tone: settings.baseURL === undefined ? "idle" : "success" },
       { label: "approval", value: settings.approvalMode ?? "safe", tone: (settings.approvalMode ?? "safe") === "auto" ? "success" : "warn" },
       { label: "docs", value: `${docsLoaded}/2`, tone: docsLoaded === 0 ? "idle" : "success" },
@@ -430,6 +439,7 @@ function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, comp
     `| base-url | ${settings.baseURL ?? "default OpenAI endpoint"} |`,
     `| api-key | ${settings.apiKey === undefined ? "unset" : "set"} |`,
     `| provider-name | ${settings.providerName ?? "openai-compatible"} |`,
+    `| context-size | ${settings.contextSize?.toString() ?? `auto (${effectiveContextSize})`} |`,
     `| approval | ${settings.approvalMode ?? "safe"} |`,
     `| agent-md | ${settings.agentMdPath ?? "unset"} |`,
     `| skills-md | ${settings.skillsMdPath ?? "unset"} |`,
@@ -438,6 +448,8 @@ function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, comp
     "```txt",
     "/settings ollama",
     "/settings model qwen2.5-coder:7b",
+    "/settings context-size 65536",
+    "/settings context-size auto",
     "/settings auto",
     "/settings approval auto",
     "/settings agent-md AGENT.md skills-md SKILLS.md",
@@ -460,6 +472,7 @@ function settingsHelpText(): string {
     "| `/settings safe` | Turn approval prompts back on. |",
     "| `/settings openai` | Use the default OpenAI endpoint. |",
     "| `/settings model <id>` | Switch model for future turns. |",
+    "| `/settings context-size <tokens>` | Override the model context window for compaction and TUI ctx%. Use `auto` or `none` to clear. |",
     "| `/settings base-url <url>` | Switch OpenAI-compatible endpoint. `none` clears it. |",
     "| `/settings api-key <key>` | Update API key. `none` unsets it. |",
     "| `/settings approval safe|auto` | Change tool approval mode. |",
@@ -597,6 +610,14 @@ function splitCommandLine(input: string): string[] {
 function optionalValue(value: string): string | undefined {
   const normalized = value.trim().toLowerCase();
   return normalized === "none" || normalized === "unset" || normalized === "default" ? undefined : requireValue("setting", value);
+}
+
+function parseContextSizeValue(value: string): number | undefined {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "auto" || normalized === "none" || normalized === "unset" || normalized === "default") {
+    return undefined;
+  }
+  return parsePositiveInteger(value, "context-size");
 }
 
 function requireValue(key: string, value: string): string {

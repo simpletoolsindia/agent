@@ -34,6 +34,7 @@ type SharedAgentCommandOptions = {
   readonly approvalMode: string;
   readonly agentMd?: string;
   readonly skillsMd?: string;
+  readonly contextSize?: string;
   readonly autoApprove?: boolean;
 };
 
@@ -42,7 +43,6 @@ type OneShotAgentCommandOptions = SharedAgentCommandOptions & {
 };
 
 type TuiCommandOptions = SharedAgentCommandOptions & {
-  readonly contextSize?: string;
   readonly uiDensity: string;
   readonly toolDisplay?: string;
   readonly reasoningDisplay?: string;
@@ -161,7 +161,6 @@ function registerTuiCommand(command: Command): void {
     const display = resolveTuiDisplay(options);
     await runOpenAICompatibleAiTui({
       ...await toRuntimeOptions(options, command),
-      contextSize: parseOptionalPositiveInteger(options.contextSize, "--context-size"),
       toolDisplay: display.toolDisplay,
       reasoningDisplay: display.reasoningDisplay,
       providerSetupMode: options.setup === false ? "never" : options.setup === true ? "always" : "auto",
@@ -183,13 +182,13 @@ function addSharedAgentOptions(command: Command): Command {
     .option("--approval-mode <mode>", `approval mode: ${APPROVAL_MODE_VALUES.join("|")}`, DEFAULT_APPROVAL_MODE)
     .option("--agent-md <path>", "load extra agent instructions from a workspace markdown file")
     .option("--skills-md <path>", "load extra skill instructions from a workspace markdown file")
+    .option("--context-size <tokens>", "override auto-detected model context window for compaction and TUI ctx%")
     .option("--auto-approve", "shortcut for --approval-mode auto");
 }
 
 function addTuiOptions(command: Command): Command {
   const displayModes = PART_DISPLAY_MODES.join("|");
   return command
-    .option("--context-size <tokens>", "override auto-detected model context window shown in the TUI title")
     .option("--ui-density <mode>", `UI preset: ${UI_DENSITY_VALUES.join("|")}`, DEFAULT_UI_DENSITY)
     .option("--tool-display <mode>", `override tool display: ${displayModes}`)
     .option("--reasoning-display <mode>", `override reasoning display: ${displayModes}`)
@@ -211,6 +210,7 @@ async function toRuntimeOptions(options: SharedAgentCommandOptions, command?: Co
   const approvalMode = options.autoApprove === true
     ? "auto"
     : selectOption(options.approvalMode, config?.approvalMode, command, "approvalMode", undefined) ?? DEFAULT_APPROVAL_MODE;
+  const contextSize = selectOption(options.contextSize, config?.contextSize?.toString(), command, "contextSize", process.env.HARNESS_CONTEXT_SIZE);
   return {
     cwd: options.cwd,
     model: selectOption(options.model, config?.model, command, "model", process.env.OPENAI_MODEL) ?? DEFAULT_MODEL,
@@ -219,6 +219,7 @@ async function toRuntimeOptions(options: SharedAgentCommandOptions, command?: Co
     providerName: selectOption(options.providerName, config?.providerName, command, "providerName", undefined) ?? DEFAULT_PROVIDER_NAME,
     agentMdPath: selectOption(options.agentMd, config?.agentMdPath, command, "agentMd", undefined),
     skillsMdPath: selectOption(options.skillsMd, config?.skillsMdPath, command, "skillsMd", undefined),
+    contextSize: parseOptionalPositiveInteger(contextSize, "--context-size"),
     approvalMode: parseApprovalMode(approvalMode),
   };
 }

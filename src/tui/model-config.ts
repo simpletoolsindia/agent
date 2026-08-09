@@ -12,6 +12,7 @@ export type ModelConfig = {
   readonly approvalMode?: ApprovalMode;
   readonly agentMdPath?: string;
   readonly skillsMdPath?: string;
+  readonly contextSize?: number;
   readonly updatedAt?: string;
 };
 
@@ -38,6 +39,7 @@ export async function saveModelConfig(options: OpenAICompatibleCodingAgentOption
     approvalMode: options.approvalMode,
     agentMdPath: options.agentMdPath,
     skillsMdPath: options.skillsMdPath,
+    contextSize: options.contextSize,
     updatedAt: new Date().toISOString(),
   });
   await mkdir(dirname(path), { recursive: true });
@@ -58,6 +60,7 @@ export function applyModelConfig<T extends OpenAICompatibleCodingAgentOptions>(o
     approvalMode: config.approvalMode ?? options.approvalMode,
     agentMdPath: config.agentMdPath ?? options.agentMdPath,
     skillsMdPath: config.skillsMdPath ?? options.skillsMdPath,
+    contextSize: config.contextSize ?? options.contextSize,
   };
 }
 
@@ -75,6 +78,7 @@ function parseModelConfig(value: unknown): ModelConfig | undefined {
     approvalMode,
     agentMdPath: readString(record.agentMdPath),
     skillsMdPath: readString(record.skillsMdPath),
+    contextSize: readPositiveInteger(record.contextSize),
     updatedAt: readString(record.updatedAt),
   });
 }
@@ -89,5 +93,12 @@ function readString(value: unknown): string | undefined {
 
 function readApprovalMode(value: unknown): ApprovalMode | undefined {
   return value === "safe" || value === "auto" ? value : undefined;
+}
+
+function readPositiveInteger(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    return undefined;
+  }
+  return value;
 }
 
