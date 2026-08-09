@@ -15,6 +15,7 @@ const YELLOW = `${ESC}[33m`;
 const BLUE = `${ESC}[34m`;
 const ACCENT_BLUE = `${ESC}[94m`;
 const CONTEXT_SIZE_PRESETS = ["", "32768", "65536", "128000"] as const;
+const APPROVAL_MODE_PRESETS = ["safe", "auto"] as const;
 
 const FIELDS = ["model", "contextSize", "baseURL", "apiKey", "approvalMode", "agentMdPath", "skillsMdPath"] as const;
 const FIELD_LABELS: Record<ProviderSetupField, string> = {
@@ -31,7 +32,7 @@ const FIELD_HELP: Record<ProviderSetupField, string> = {
   contextSize: "Optional token limit override. Leave blank to auto-detect from model.",
   baseURL: "OpenAI-compatible /v1 endpoint. Leave blank for OpenAI default.",
   apiKey: "Stored only in memory for this run. Use ollama for local Ollama.",
-  approvalMode: "safe asks before write/bash; auto runs approved tools without prompting.",
+  approvalMode: "Dropdown: safe asks before write/bash; auto runs approved tools without prompting.",
   agentMdPath: "Optional workspace markdown with project-specific agent instructions.",
   skillsMdPath: "Optional workspace markdown with reusable skill instructions.",
 };
@@ -219,12 +220,13 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
     };
   }
   if (key === "\u0001") {
+    const nextApproval = nextApprovalMode(state.values.approvalMode);
     return {
       type: "state",
       state: {
         ...state,
-        values: { ...state.values, approvalMode: state.values.approvalMode === "auto" ? "safe" : "auto" },
-        message: state.values.approvalMode === "auto" ? "Safe approval enabled." : "Auto approval enabled for this session.",
+        values: { ...state.values, approvalMode: nextApproval },
+        message: `Approval mode set to ${nextApproval}.`,
       },
     };
   }
@@ -263,7 +265,7 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
         },
       };
     }
-    const nextApproval = normalizedApprovalMode(state.values.approvalMode, "safe") === "auto" ? "safe" : "auto";
+    const nextApproval = nextApprovalMode(state.values.approvalMode);
     return {
       type: "state",
       state: {
@@ -409,15 +411,25 @@ function visibleFieldValue(field: ProviderSetupField, rawValue: string, active: 
     return "•".repeat(Math.min(rawValue.length, 32));
   }
   if (field === "approvalMode") {
-    const current = normalizedApprovalMode(rawValue, "safe") ?? "safe";
-    const safe = current === "safe" ? `${BOLD}safe${RESET}` : "safe";
-    const auto = current === "auto" ? `${BOLD}auto${RESET}` : "auto";
-    return active ? `▾ ${safe} / ${auto}` : current;
+    return renderApprovalChoices(rawValue, active);
   }
   if (field === "contextSize") {
     return active ? renderContextSizeChoices(rawValue) : rawValue;
   }
   return rawValue;
+}
+
+function renderApprovalChoices(rawValue: string, active: boolean): string {
+  const current = normalizedApprovalMode(rawValue, "safe") ?? "safe";
+  if (!active) {
+    return `${current} ▾`;
+  }
+  const choices = APPROVAL_MODE_PRESETS.map((value) => value === current ? `${BOLD}${value}${RESET}` : value).join(" / ");
+  return `▾ ${choices}`;
+}
+
+function nextApprovalMode(current: string): ApprovalMode {
+  return normalizedApprovalMode(current, "safe") === "auto" ? "safe" : "auto";
 }
 
 function renderContextSizeChoices(rawValue: string): string {

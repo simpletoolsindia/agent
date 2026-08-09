@@ -401,6 +401,7 @@ async function main(): Promise<void> {
       && plainSetupScreen.includes("Command deck")
       && plainSetupScreen.includes("Ctrl+X ctx size")
       && plainSetupScreen.includes("▾ auto / 32k / 64k / 125k")
+      && plainSetupScreen.includes("safe ▾")
       && plainSetupScreen.includes("Ctrl+A"),
   ));
 
@@ -449,7 +450,7 @@ async function main(): Promise<void> {
   }, 88));
   results.push(recordCheck(
     "provider setup dropdown toggles auto approval",
-    dropdownApprovalSetup.type === "state" && dropdownApprovalSetup.state.values.approvalMode === "auto" && dropdownScreen.includes("▾ safe / auto"),
+    dropdownApprovalSetup.type === "state" && dropdownApprovalSetup.state.values.approvalMode === "auto" && dropdownScreen.includes("▾ safe / auto") && dropdownScreen.includes("Dropdown: safe asks"),
   ));
 
   const contextShortcutSetup = reduceProviderSetupInput({
