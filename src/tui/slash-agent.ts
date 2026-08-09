@@ -13,6 +13,7 @@ import {
 } from "../ai/coding-agent.js";
 import { renderActivityPulse, renderCliPanel, renderKeyValueDeck, renderMetricStrip, renderProgressSteps, renderStatusBar } from "./status-bar.js";
 import { formatSessionList, listSessions, loadSession, saveSession } from "./session-store.js";
+import { saveModelConfig } from "./model-config.js";
 
 const SETTINGS_KEYS = ["model", "base-url", "api-key", "provider-name", "approval", "agent-md", "skills-md"] as const;
 const COMPACT_KEEP_MESSAGES = 8;
@@ -34,6 +35,7 @@ type SlashCommandAgentOptions = OpenAICompatibleCodingAgentOptions & {
   readonly resumeSession?: boolean;
   readonly resumeSessionId?: string;
   readonly sessionId?: string;
+  readonly modelConfigPath?: string;
 };
 type RuntimeSettings = OpenAICompatibleCodingAgentOptions;
 type CommandResult = {
@@ -57,13 +59,16 @@ class SlashCommandAgent {
   private readonly resumeSessionId: string | undefined;
   private readonly sessionId: string | undefined;
   private sessionPrefix: readonly ModelMessage[] = [];
+  private readonly modelConfigPath: string | undefined;
   private sessionLoaded = false;
 
   public constructor(options: SlashCommandAgentOptions) {
-    this.settings = { ...options };
-    this.resumeSession = options.resumeSession !== false;
-    this.resumeSessionId = options.resumeSessionId;
-    this.sessionId = options.sessionId;
+    const { modelConfigPath, resumeSession, resumeSessionId, sessionId, ...runtimeOptions } = options;
+    this.settings = { ...runtimeOptions };
+    this.modelConfigPath = modelConfigPath;
+    this.resumeSession = resumeSession !== false;
+    this.resumeSessionId = resumeSessionId;
+    this.sessionId = sessionId;
     this.current = createOpenAICompatibleCodingAgent(this.optionsWithTuiLogger());
   }
 
@@ -135,7 +140,7 @@ class SlashCommandAgent {
       case "help":
         return { text: slashHelpText(this.settings, this.compactNextPrompts, this.compactRuns) };
       case "settings":
-        return this.applySettingsCommand(command.args);
+        return await this.applySettingsCommand(command.args);
       case "agents":
         return { text: agentsHelpText() };
       case "sessions":
@@ -191,7 +196,7 @@ class SlashCommandAgent {
     });
   }
 
-  private applySettingsCommand(args: readonly string[]): CommandResult {
+  private async applySettingsCommand(args: readonly string[]): Promise<CommandResult> {
     if (args.length === 0 || args[0] === "show" || args[0] === "menu") {
       return { text: formatSettings(this.settings, this.compactNextPrompts, this.compactRuns) };
     }
@@ -200,6 +205,7 @@ class SlashCommandAgent {
     }
     if (args[0] === "auto" || args[0] === "auto-approve" || args[0] === "safe") {
       this.settings = { ...this.settings, approvalMode: args[0] === "safe" ? "safe" : "auto" };
+      await saveModelConfig(this.settings, this.modelConfigPath);
       return {
         text: [
           `## Approval ${this.settings.approvalMode === "auto" ? "auto" : "safe"} mode enabled`,
@@ -214,6 +220,7 @@ class SlashCommandAgent {
     }
     if (args[0] === "ollama" || args[0] === "openai") {
       const messages = this.applySettingsPreset(args[0]);
+      await saveModelConfig(this.settings, this.modelConfigPath);
       return {
         text: [
           `## ${args[0] === "ollama" ? "Ollama" : "OpenAI"} setup applied`,
@@ -240,6 +247,7 @@ class SlashCommandAgent {
     for (const update of updates) {
       messages.push(this.applySetting(update.key, update.value));
     }
+    await saveModelConfig(this.settings, this.modelConfigPath);
 
     return {
       text: [

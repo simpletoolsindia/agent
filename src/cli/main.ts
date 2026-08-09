@@ -5,6 +5,7 @@ import { runOpenAICompatibleAi } from "../ai/openai-compatible-ai.js";
 import { runOpenAICompatibleAiTui } from "../tui/ai-tui.js";
 import { renderActivityPulse, renderCliPanel, renderCliSplash, renderProgressSteps } from "../tui/status-bar.js";
 import { formatSessionList, listSessions } from "../tui/session-store.js";
+import { loadModelConfig } from "../tui/model-config.js";
 import { createDoctorReport } from "./doctor.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
@@ -101,8 +102,8 @@ function registerAiCommand(command: Command): void {
     command.command("ai")
       .description("Run one OpenAI-compatible LLM request")
       .requiredOption("-p, --prompt <prompt>", "user prompt to send to the AI"),
-  ).action(async (options: OneShotAgentCommandOptions) => {
-    const runtimeOptions = toRuntimeOptions(options);
+  ).action(async (options: OneShotAgentCommandOptions, command: Command) => {
+    const runtimeOptions = await toRuntimeOptions(options, command);
     if (process.stdout.isTTY) {
       process.stdout.write(`${renderCliSplash(runtimeOptions.model, runtimeOptions.cwd, runtimeOptions.approvalMode, process.stdout.columns ?? 88)}\n\n`);
     }
@@ -137,8 +138,8 @@ function registerDoctorCommand(command: Command): void {
       command.command("doctor")
         .description("Check local install, PATH, build, workspace, and provider setup"),
     ),
-  ).action(async (options: DoctorCommandOptions) => {
-    const runtimeOptions = toRuntimeOptions(options);
+  ).action(async (options: DoctorCommandOptions, command: Command) => {
+    const runtimeOptions = await toRuntimeOptions(options, command);
     process.stdout.write(`${await createDoctorReport({
       cwd: runtimeOptions.cwd,
       model: runtimeOptions.model,
@@ -157,10 +158,10 @@ function registerTuiCommand(command: Command): void {
       command.command("tui")
         .description("Open the interactive terminal UI with /settings, /compact, and /agents commands"),
     ),
-  ).action(async (options: TuiCommandOptions) => {
+  ).action(async (options: TuiCommandOptions, command: Command) => {
     const display = resolveTuiDisplay(options);
     await runOpenAICompatibleAiTui({
-      ...toRuntimeOptions(options),
+      ...await toRuntimeOptions(options, command),
       contextSize: parseOptionalPositiveInteger(options.contextSize, "--context-size"),
       toolDisplay: display.toolDisplay,
       reasoningDisplay: display.reasoningDisplay,
@@ -168,6 +169,7 @@ function registerTuiCommand(command: Command): void {
       resumeSession: options.resume !== false,
       resumeSessionId: typeof options.resume === "string" ? options.resume : undefined,
       sessionId: options.sessionId,
+      skipModelConfigLoad: true,
     });
   });
 }
@@ -205,17 +207,35 @@ function addDoctorOptions(command: Command): Command {
     .option("--bin-dir <path>", "install directory to check", process.env.HARNESS_INSTALL_BIN_DIR ?? `${process.env.HOME ?? ""}/.local/bin`);
 }
 
-function toRuntimeOptions(options: SharedAgentCommandOptions) {
+async function toRuntimeOptions(options: SharedAgentCommandOptions, command?: Command) {
+  const config = await loadModelConfig();
+  const approvalMode = options.autoApprove === true
+    ? "auto"
+    : selectOption(options.approvalMode, config?.approvalMode, command, "approvalMode", undefined) ?? DEFAULT_APPROVAL_MODE;
   return {
     cwd: options.cwd,
-    model: options.model,
-    baseURL: options.baseUrl,
-    apiKey: options.apiKey,
-    providerName: options.providerName,
-    agentMdPath: options.agentMd,
-    skillsMdPath: options.skillsMd,
-    approvalMode: options.autoApprove === true ? "auto" as const : parseApprovalMode(options.approvalMode),
+    model: selectOption(options.model, config?.model, command, "model", process.env.OPENAI_MODEL) ?? DEFAULT_MODEL,
+    baseURL: selectOption(options.baseUrl, config?.baseURL, command, "baseUrl", process.env.OPENAI_BASE_URL),
+    apiKey: selectOption(options.apiKey, config?.apiKey, command, "apiKey", process.env.OPENAI_API_KEY),
+    providerName: selectOption(options.providerName, config?.providerName, command, "providerName", undefined) ?? DEFAULT_PROVIDER_NAME,
+    agentMdPath: selectOption(options.agentMd, config?.agentMdPath, command, "agentMd", undefined),
+    skillsMdPath: selectOption(options.skillsMd, config?.skillsMdPath, command, "skillsMd", undefined),
+    approvalMode: parseApprovalMode(approvalMode),
   };
+}
+
+function selectOption<T extends string>(
+  cliValue: T | undefined,
+  configValue: T | undefined,
+  command: Command | undefined,
+  optionName: string,
+  envValue: string | undefined,
+): T | undefined {
+  const source = command?.getOptionValueSource(optionName);
+  if (source === "cli" || (envValue !== undefined && envValue.trim().length > 0)) {
+    return cliValue;
+  }
+  return configValue ?? cliValue;
 }
 
 function resolveTuiDisplay(options: TuiCommandOptions): {

@@ -218,7 +218,7 @@ npm run tui -- --no-resume            # start clean
 npm run cli -- sessions               # list the five saved sessions
 ```
 
-Saved TUI sessions keep the latest five local conversations in `~/.harness-tools/sessions.json`.
+Saved TUI sessions keep the latest five local conversations in `~/.harness-tools/sessions.json`. Provider setup saves the active model profile in `~/.harness-tools/model.json`, and the next `harness ai`, `harness doctor`, or `harness tui` run loads it unless a CLI flag or provider environment variable overrides the field.
 
 Force the setup screen even when values are already supplied:
 
@@ -246,6 +246,7 @@ TUI slash commands run locally and do not spend an LLM call:
 | `/settings approval safe\|auto` | Change approval mode without restarting the TUI. |
 | `/settings agent-md <path>` | Load additional agent instructions markdown for future turns. |
 | `/settings skills-md <path>` | Load additional skills markdown for future turns. |
+| `/settings ...` | Any settings update also rewrites `~/.harness-tools/model.json` for the next run. |
 | `/compact` | Drop slash-command chatter and prune older tool-heavy history for future turns. |
 | `/agents` | Show the built-in read-only subagent roles and simplified task payload format. |
 

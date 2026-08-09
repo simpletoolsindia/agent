@@ -9,6 +9,7 @@ import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
 import { renderActivityPulse, renderCliSplash, renderGradientText, renderMetricStrip, renderProgressBar, renderProgressSteps, renderShimmerText, renderStatusBar, stripAnsi, visibleLength } from "../src/tui/status-bar.js";
 import { patchAiSdkTuiRenderer } from "../src/tui/ai-sdk-tui-patch.js";
+import { applyModelConfig, loadModelConfig, saveModelConfig } from "../src/tui/model-config.js";
 import { createDoctorReport } from "../src/cli/doctor.js";
 
 const workspace = join(process.cwd(), ".correctness-workspace");
@@ -219,7 +220,8 @@ async function main(): Promise<void> {
     content: "# Skills\nUse focused validation.\n",
   }, context));
 
-  const slashAgent = createSlashCommandAgent({ cwd: workspace, model: "gpt-4o-mini", apiKey: "test" });
+  const slashModelConfigPath = join(workspace, "model.json");
+  const slashAgent = createSlashCommandAgent({ cwd: workspace, model: "gpt-4o-mini", apiKey: "test", modelConfigPath: slashModelConfigPath });
   const settingsText = await collectSlashText(slashAgent, "/settings model qwen2.5-coder:7b approval auto");
   results.push(recordCheck("slash settings updates runtime config", settingsText.includes("qwen2.5-coder:7b") && settingsText.includes("| approval | auto |")));
 
@@ -238,6 +240,16 @@ async function main(): Promise<void> {
     ollamaSettingsText.includes("Ollama setup applied")
       && ollamaSettingsText.includes("http://localhost:11434/v1")
       && ollamaSettingsText.includes("| api-key | set |"),
+  ));
+  const savedSlashConfig = await loadModelConfig(slashModelConfigPath);
+  results.push(recordCheck(
+    "slash settings persist model config",
+    savedSlashConfig?.model === "qwen2.5-coder:7b"
+      && savedSlashConfig.baseURL === "http://localhost:11434/v1"
+      && savedSlashConfig.apiKey === "ollama"
+      && savedSlashConfig.approvalMode === "auto"
+      && savedSlashConfig.agentMdPath === "AGENT.md"
+      && savedSlashConfig.skillsMdPath === "SKILLS.md",
   ));
 
   const compactText = await collectSlashText(slashAgent, "/compact");
@@ -331,6 +343,19 @@ async function main(): Promise<void> {
       && setupOptions.agentMdPath === "AGENT.md"
       && setupOptions.approvalMode === "auto"
       && setupOptions.skillsMdPath === "SKILLS.md",
+  ));
+
+  const modelConfigPath = join(workspace, "saved-model.json");
+  await saveModelConfig(setupOptions, modelConfigPath);
+  const savedSetupConfig = await loadModelConfig(modelConfigPath);
+  const loadedSetupOptions = applyModelConfig({ cwd: workspace, model: "gpt-4o-mini", approvalMode: "safe" as "safe" | "auto" }, savedSetupConfig);
+  results.push(recordCheck(
+    "provider setup saves and reloads model config",
+    savedSetupConfig?.model === "qwen2.5-coder:7b"
+      && savedSetupConfig.baseURL === "http://localhost:11434/v1"
+      && savedSetupConfig.apiKey === "ollama"
+      && loadedSetupOptions.model === "qwen2.5-coder:7b"
+      && loadedSetupOptions.approvalMode === "auto",
   ));
 
   const setupScreen = renderProviderSetupScreen({

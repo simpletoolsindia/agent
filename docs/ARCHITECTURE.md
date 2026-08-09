@@ -118,14 +118,15 @@ This keeps command parsing independent from model/tool behavior.
 
 ## TUI flow
 
-1. `runOpenAICompatibleAiTui` calls `maybeRunProviderSetup`.
-2. Provider setup resolves model, endpoint, key, approval mode, and optional markdown instruction files.
-3. `patchAiSdkTuiRenderer` patches upstream `@ai-sdk/tui` before importing it. The dynamic import is required because the patch edits the installed dependency before module evaluation.
-4. The renderer patch changes message labels, viewport chrome, progress footer, scroll bar, code fences, tool output, and streamed reasoning. Every tool call renders through the referenced rounded output box; edit tools use a `Diff` separator, bash shows command/output/wall/timeout, todo shows phase trees, subagent shows live role/goal/status updates, and reasoning uses the same box grammar with `Think · live` status.
-5. `createSlashCommandAgent` wraps the shared coding agent with local slash-command handling.
-6. `runFullscreen` enters alternate screen mode.
-7. `runAgentTUI` renders messages, tool cards, reasoning, progress, approvals, and response statistics.
-8. `session-store.ts` persists the five newest sessions in `~/.harness-tools/sessions.json`.
+1. `runOpenAICompatibleAiTui` loads `~/.harness-tools/model.json` unless the CLI already resolved model config.
+2. `maybeRunProviderSetup` resolves model, endpoint, key, approval mode, and optional markdown instruction files.
+3. Successful setup writes the resolved profile back to `~/.harness-tools/model.json`; local `/settings` updates rewrite the same file so the next run starts with the updated model profile.
+4. `patchAiSdkTuiRenderer` patches upstream `@ai-sdk/tui` before importing it. The dynamic import is required because the patch edits the installed dependency before module evaluation.
+5. The renderer patch changes message labels, viewport chrome, progress footer, scroll bar, code fences, tool output, and streamed reasoning. Every tool call renders through the referenced rounded output box; edit tools use a `Diff` separator, bash shows command/output/wall/timeout, todo shows phase trees, subagent shows live role/goal/status updates, and reasoning uses the same box grammar with `Think · live` status.
+6. `createSlashCommandAgent` wraps the shared coding agent with local slash-command handling.
+7. `runFullscreen` enters alternate screen mode.
+8. `runAgentTUI` renders messages, tool cards, reasoning, progress, approvals, and response statistics.
+9. `session-store.ts` persists the five newest sessions in `~/.harness-tools/sessions.json`.
 
 ## Approval flow
 
