@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v13 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v15 */";
 
 /**
  * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
@@ -40,8 +40,11 @@ export async function patchAiSdkTuiRenderer(): Promise<void> {
   }
 
   patched = replaceIfPresent(patched, originalTopBorder(), patchedTopBorder());
+  patched = replaceIfPresent(patched, originalPinkToolColor(), patchedToolColor());
   patched = replaceIfPresent(patched, originalBottomBorder(), patchedBottomBorder());
   patched = replaceIfPresent(patched, currentViewportProgress(), patchedViewportProgress());
+  patched = replaceIfPresent(patched, currentScreenViewport(), patchedScreenViewport());
+  patched = replaceIfPresent(patched, originalBodyContentHeight(), patchedBodyContentHeight());
   patched = replaceIfPresent(patched, originalActiveControls(), patchedActiveControls());
   patched = replaceIfPresent(patched, originalInterruptedStatus(), patchedInterruptedStatus());
   patched = replaceIfPresent(patched, originalInterruptedStopCondition(), patchedInterruptedStopCondition());
@@ -116,13 +119,18 @@ function patchedRenderMarkdown(): string {
     "  for (let index = 0; index < lines.length; index += 1) {",
     "    const line = (_a = lines[index]) != null ? _a : \"\";",
     "    if (line.startsWith(\"```\")) {",
-    "      inCodeFence = !inCodeFence;",
-    "      codeLanguage = inCodeFence ? line.slice(3).trim() : \"\";",
-    "      output.push(`${colors.tool}${ansi.bold}${inCodeFence ? `┌─ code${codeLanguage.length === 0 ? \"\" : ` ${codeLanguage}`} ` : \"└─ code\"}${ansi.boldOff}${colors.reset}`);",
+    "      if (inCodeFence) {",
+    "        output.push(renderHarnessCodeFenceBottom());",
+    "        inCodeFence = false;",
+    "      } else {",
+    "        inCodeFence = true;",
+    "        codeLanguage = line.slice(3).trim();",
+    "        output.push(renderHarnessCodeFenceTop(codeLanguage));",
+    "      }",
     "      continue;",
     "    }",
     "    if (inCodeFence) {",
-    "      output.push(`${colors.tool}│ ${line}${colors.reset}`);",
+    "      output.push(renderHarnessCodeFenceLine(line));",
     "      continue;",
     "    }",
     "    const table = parseTable(lines, index);",
@@ -133,7 +141,24 @@ function patchedRenderMarkdown(): string {
     "    }",
     "    output.push(renderMarkdownLine(line));",
     "  }",
+    "  if (inCodeFence) {",
+    "    output.push(renderHarnessCodeFenceBottom());",
+    "  }",
     "  return output.join(\"\\n\");",
+    "}",
+    "function renderHarnessCodeFenceTop(language) {",
+    "  const label = language.length === 0 ? \" code \" : ` code · ${language} `;",
+    "  const width = 74;",
+    "  return `${colors.dim}╭─${colors.reset}${colors.reasoning}${ansi.bold}${label}${ansi.boldOff}${colors.reset}${colors.dim}${\"─\".repeat(Math.max(0, width - visibleLength(label) - 2))}╮${colors.reset}`;",
+    "}",
+    "function renderHarnessCodeFenceLine(line) {",
+    "  const width = 72;",
+    "  const text = sliceVisible(line, width);",
+    "  const padding = \" \".repeat(Math.max(0, width - visibleLength(text)));",
+    "  return `${colors.dim}│${colors.reset} ${colors.reasoning}${text}${colors.reset}${padding} ${colors.dim}│${colors.reset}`;",
+    "}",
+    "function renderHarnessCodeFenceBottom() {",
+    "  return `${colors.dim}╰${\"─\".repeat(73)}╯${colors.reset}`;",
     "}",
   ].join("\n");
 }
@@ -190,21 +215,82 @@ function patchedBottomBorder(): string {
   ].join("\n");
 }
 
-function currentViewportProgress(): string {
+function originalPinkToolColor(): string {
+  return '  tool: "\\x1B[95m",';
+}
+
+function patchedToolColor(): string {
+  return '  tool: "\\x1B[36m",';
+}
+
+function currentScreenViewport(): string {
   return [
-    "function renderViewportProgress(message, width) {",
-    "  const contentWidth = Math.max(20, width - 4);",
-    "  const barWidth = Math.max(8, Math.min(20, Math.floor(contentWidth / 5)));",
-    "  const lower = message.toLowerCase();",
-    "  const progress = lower.includes(\"executing\") ? 0.7 : lower.includes(\"processing\") ? 0.45 : lower.includes(\"streaming\") ? 0.25 : 1;",
-    "  const filled = Math.max(1, Math.round(barWidth * progress));",
-    "  const bar = `${colors.tool}${\"▰\".repeat(filled)}${colors.dim}${\"▱\".repeat(barWidth - filled)}${colors.reset}`;",
-    "  return `${bar} ${colors.dim}scroll ↑/↓ PgUp/PgDn${colors.reset} · ${message}`;",
+    "function renderScreenViewport(state) {",
+    "  var _a;",
+    "  const width = Math.max(20, state.width);",
+    "  const height = Math.max(8, state.height);",
+    "  const inputHeight = 3;",
+    "  const bodyHeight = height - inputHeight;",
+    "  const bodyContentHeight = bodyHeight - 2;",
+    "  const visibleBody = state.visibleBodyLines.slice(0, bodyContentHeight);",
+    "  while (visibleBody.length < bodyContentHeight) {",
+    "    visibleBody.push(\"\");",
+    "  }",
+    "  const lines = [",
+    "    topBorder(width, state.title, state.rightTitle),",
+    "    ...visibleBody.map((line) => boxLine(line, width)),",
+    "    bottomBorder(width),",
+    "    topBorder(width, state.inputActive ? \"Chat prompt\" : \"Progress\"),",
+    "    boxLine(",
+    "      state.inputActive ? `› ${state.input}${state.inputCursorVisible === false ? \" \" : \"\\u2588\"}` : renderViewportProgress((_a = state.status) != null ? _a : \"Streaming... \\u2191/\\u2193 scroll \\xB7 Ctrl+C quit\", width),",
+    "      width",
+    "    ),",
+    "    bottomBorder(width)",
+    "  ];",
+    "  return lines.join(\"\\n\");",
     "}",
   ].join("\n");
 }
 
-function patchedViewportProgress(): string {
+function patchedScreenViewport(): string {
+  return [
+    "function renderScreenViewport(state) {",
+    "  var _a;",
+    "  const width = Math.max(20, state.width);",
+    "  const height = Math.max(8, state.height);",
+    "  const bodyContentHeight = Math.max(1, height - 2);",
+    "  const visibleBody = state.visibleBodyLines.slice(0, bodyContentHeight);",
+    "  while (visibleBody.length < bodyContentHeight) {",
+    "    visibleBody.push(\"\");",
+    "  }",
+    "  const bottom = state.inputActive ? renderPromptMenu(state.input, state.inputCursorVisible, width) : renderViewportProgress((_a = state.status) != null ? _a : \"Streaming... \\u2191/\\u2193 scroll \\xB7 Ctrl+C quit\", width);",
+    "  const lines = [",
+    "    topBorder(width, state.title, state.rightTitle),",
+    "    ...visibleBody.map((line) => boxLine(line, width)),",
+    "    bottomMenuLine(bottom, width)",
+    "  ];",
+    "  return lines.join(\"\\n\");",
+    "}",
+  ].join("\n");
+}
+
+function originalBodyContentHeight(): string {
+  return [
+    "bodyContentHeight_fn = function() {",
+    "  return Math.max(1, __privateMethod(this, _TerminalRenderer_instances, height_fn).call(this) - 5);",
+    "};",
+  ].join("\n");
+}
+
+function patchedBodyContentHeight(): string {
+  return [
+    "bodyContentHeight_fn = function() {",
+    "  return Math.max(1, __privateMethod(this, _TerminalRenderer_instances, height_fn).call(this) - 2);",
+    "};",
+  ].join("\n");
+}
+
+function currentViewportProgress(): string {
   return [
     "function renderViewportProgress(message, width) {",
     "  const contentWidth = Math.max(20, width - 4);",
@@ -222,12 +308,44 @@ function patchedViewportProgress(): string {
     "  let bar = \"\";",
     "  for (let index = 0; index < filled; index += 1) {",
     "    const t = filled > 1 ? index / (filled - 1) : ratio;",
-    "    const red = Math.round(0 + 30 * t);",
-    "    const green = Math.round(220 - 30 * t);",
-    "    const blue = Math.round(255 - 115 * t);",
-    "    bar += `\\x1B[38;2;${red};${green};${blue}m█`;",
+    "    const red = Math.round(255 * (1 - t));",
+    "    const green = Math.round(255 * t);",
+    "    bar += `\\x1B[38;2;${red};${green};50m█`;",
     "  }",
     "  return `${bar}${colors.reset}${colors.dim}${\"░\".repeat(empty)}${colors.reset}`;",
+    "}",
+  ].join("\n");
+}
+
+function patchedViewportProgress(): string {
+  return [
+    "function renderViewportProgress(message, width) {",
+    "  const contentWidth = Math.max(20, width - 2);",
+    "  const lower = message.toLowerCase();",
+    "  const busy = lower.includes(\"executing\") || lower.includes(\"processing\") || lower.includes(\"streaming\") || lower.includes(\"running\");",
+    "  const progress = lower.includes(\"executing\") ? 0.72 : lower.includes(\"processing\") ? 0.48 : lower.includes(\"streaming\") ? 0.32 : busy ? 0.62 : 1;",
+    "  const spinnerFrames = [\"⠋\", \"⠙\", \"⠹\", \"⠸\", \"⠼\", \"⠴\", \"⠦\", \"⠧\", \"⠇\", \"⠏\"];",
+    "  const spinner = busy ? spinnerFrames[Math.floor(Date.now() / 120) % spinnerFrames.length] : \"✓\";",
+    "  const barWidth = Math.max(8, Math.min(18, Math.floor(contentWidth / 5)));",
+    "  const bar = renderHarnessProgressBar(progress, barWidth);",
+    "  const inSubagent = lower.includes(\"subagent running\");",
+    "  const tip = inSubagent ? \"\" : busy ? \" · Esc interrupt · ↑/↓ scroll\" : \" · Enter prompt · ↑/↓ history\";",
+    "  return `${colors.reasoning}${spinner}${colors.reset} ${bar} ${colors.assistant}${message}${colors.reset}${colors.dim}${tip}${colors.reset}`;",
+    "}",
+    "function renderPromptMenu(input, inputCursorVisible, width) {",
+    "  const cursor = inputCursorVisible === false ? \" \" : \"█\";",
+    "  return `${colors.user}›${colors.reset} ${input}${cursor} ${colors.dim}· Enter send · Esc cancel · ↑/↓ scroll${colors.reset}`;",
+    "}",
+    "function bottomMenuLine(content, width) {",
+    "  const inner = Math.max(0, width - 2);",
+    "  const visible = sliceVisible(content, inner);",
+    "  const padding = \" \".repeat(Math.max(0, inner - visibleLength(visible)));",
+    "  return `${colors.dim}╰${colors.reset}${visible}${padding}${colors.dim}╯${colors.reset}`;",
+    "}",
+    "function renderHarnessProgressBar(progress, width) {",
+    "  const filled = Math.max(1, Math.round(Math.max(0, Math.min(1, progress)) * width));",
+    "  const empty = Math.max(0, width - filled);",
+    "  return `${colors.dim}▐${colors.reset}${colors.reasoning}${\"█\".repeat(filled)}${colors.dim}${\"░\".repeat(empty)}${colors.reset}${colors.dim}▌${colors.reset}`;",
     "}",
   ].join("\n");
 }

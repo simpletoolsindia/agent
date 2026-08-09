@@ -5,7 +5,7 @@ import { JsonConsoleLogger } from "../src/core/logger.js";
 import type { ToolResult } from "../src/core/registry.js";
 import { createSlashCommandAgent, pickRuntimeSuggestion, withInlineProgress } from "../src/tui/slash-agent.js";
 import { reduceProviderSetupInput, renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
-import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js";
+import { createCodingInstructions, resolveContextSize } from "../src/ai/openai-compatible-runtime.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
 import { renderActivityPulse, renderCliSplash, renderGradientText, renderMetricStrip, renderProgressBar, renderProgressSteps, renderShimmerText, renderStatusBar, stripAnsi, visibleLength } from "../src/tui/status-bar.js";
 import { patchAiSdkTuiRenderer } from "../src/tui/ai-sdk-tui-patch.js";
@@ -276,6 +276,15 @@ async function main(): Promise<void> {
       && instructions.includes("Clean-code target")
   ));
 
+  results.push(recordCheck(
+    "context window auto-detects common OpenAI models",
+    resolveContextSize("gpt-4o-mini") === 128_000
+      && resolveContextSize("gpt-4.1") === 1_047_576
+      && resolveContextSize("o4-mini") === 200_000
+      && resolveContextSize("qwen2.5-coder:7b") === 32768
+      && resolveContextSize("gpt-4o-mini", 4096) === 4096,
+  ));
+
   const subagentSource = await readFile("src/ai/subagent-tool.ts", "utf8");
   results.push(recordCheck(
     "subagent handoff stays bounded for context control",
@@ -372,8 +381,8 @@ async function main(): Promise<void> {
   }, 88);
   const plainSetupScreen = stripAnsi(setupScreen);
   results.push(recordCheck(
-    "provider setup renders modern OMP cockpit",
-    plainSetupScreen.includes("Oh My Pi cockpit")
+    "provider setup renders modern coding setup",
+    plainSetupScreen.includes("Coding Agent setup")
       && plainSetupScreen.includes("Modern five-tool workspace")
       && plainSetupScreen.includes("Profile cards")
       && plainSetupScreen.includes("Workspace context")
@@ -428,7 +437,7 @@ async function main(): Promise<void> {
     "rich CLI panels render animated affordances",
     activityPulse.includes("⠹")
       && activityPulse.includes("✦")
-      && plainCliSplash.includes("Harness AI · OMP cockpit")
+      && plainCliSplash.includes("Coding Agent")
       && plainCliSplash.includes("parallel search/read/bash")
       && plainCliSplash.includes("◆ prompt"),
   ));
@@ -453,7 +462,7 @@ async function main(): Promise<void> {
   const patchedTuiSource = await readFile("node_modules/@ai-sdk/tui/dist/index.js", "utf8");
   results.push(recordCheck(
     "TUI tool and reasoning outputs use referenced box frames",
-    patchedTuiSource.includes("rich tui patch v13")
+    patchedTuiSource.includes("rich tui patch v15")
       && patchedTuiSource.includes("renderHarnessOutputBox")
       && patchedTuiSource.includes("harnessSeparator")
       && patchedTuiSource.includes("formatHarnessBashFrame")
@@ -469,7 +478,8 @@ async function main(): Promise<void> {
       && patchedTuiSource.includes("formatHarnessReasoningFrame")
       && patchedTuiSource.includes("Think · live")
       && patchedTuiSource.includes("live reasoning stream")
-      && (patchedTuiSource.match(/const harnessFrame = formatHarnessToolFrame\(toolName, inputText, part, status\)/g) ?? []).length === 1,
+      && patchedTuiSource.includes("const inSubagent = lower.includes(\"subagent running\")")
+      && (patchedTuiSource.match(/const harnessFrame = formatHarnessToolFrame\(toolName, inputText, part, status\)/g) ?? []).length === 1
   ));
 
   const progressParts = await collectInlineProgressText();

@@ -23,10 +23,10 @@
     "@ai-sdk/tui": "^1.0.59",
     "@vscode/ripgrep": "latest",
     "ai": "^7.0.58",
-    "ajv": "latest",
     "commander": "^15.0.0",
     "execa": "latest",
-    "write-file-atomic": "latest"
+    "write-file-atomic": "latest",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "latest",

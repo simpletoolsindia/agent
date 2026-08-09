@@ -285,7 +285,7 @@ export function renderProviderSetupScreen(state: ProviderSetupState, width: numb
   const connectionState = state.values.baseURL.trim().length === 0 ? "OpenAI default" : "custom /v1";
   const docsState = [state.values.agentMdPath, state.values.skillsMdPath].filter((value) => value.trim().length > 0).length;
   const rows = [
-    topBorder(safeWidth, ` ${renderGradientText("Harness AI · Oh My Pi cockpit", frame / 24)} `),
+    topBorder(safeWidth, ` ${renderGradientText("Coding Agent setup", frame / 24)} `),
     framedLine(`${renderGradientText("Modern five-tool workspace", frame / 30)} ${DIM}rounded cards · profile chips · stage rail · live validation${RESET}`, contentWidth),
     framedLine(renderMetricStrip([
       { label: "model", value: state.values.model.trim().length === 0 ? "unset" : state.values.model.trim(), tone: "busy" },
@@ -294,7 +294,7 @@ export function renderProviderSetupScreen(state: ProviderSetupState, width: numb
       { label: "docs", value: `${docsState}/2`, tone: docsState === 0 ? "idle" : "success" },
     ], contentWidth), contentWidth),
     framedLine(renderProgressSteps(FIELDS.map((field) => FIELD_LABELS[field]), state.activeField, contentWidth), contentWidth),
-    framedLine(renderActivityPulse("OMP cockpit", "Keyboard-first setup with animated state, shortcuts, and compact cards.", contentWidth, frame, "busy"), contentWidth),
+    framedLine(renderActivityPulse("Setup", "Keyboard-first setup with animated state, shortcuts, and compact cards.", contentWidth, frame, "busy"), contentWidth),
     framedLine("", contentWidth),
     renderSectionTitle("Profile cards", contentWidth),
     ...FIELDS.slice(0, 4).flatMap((field, index) => renderFieldRows(state, field, index, contentWidth, frame)),

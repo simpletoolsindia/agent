@@ -10,9 +10,9 @@ import { JsonConsoleLogger } from "../core/logger.js";
 import { loadInstructionDocuments, type ContextFileOptions } from "./context-files.js";
 import { createAiToolBundle, type ApprovalMode } from "./ai-tools.js";
 import {
-  DEFAULT_CONTEXT_SIZE,
   createCodingInstructions,
   createOpenAICompatibleChatModel,
+  resolveContextSize,
   type OpenAICompatibleModelOptions,
 } from "./openai-compatible-runtime.js";
 
@@ -49,7 +49,7 @@ export function createOpenAICompatibleCodingAgent(options: OpenAICompatibleCodin
       providerName: options.providerName,
     },
   });
-  const contextSize = options.contextSize ?? DEFAULT_CONTEXT_SIZE;
+  const contextSize = resolveContextSize(options.model, options.contextSize);
   const instructions = `${createCodingInstructions(options.cwd, loadInstructionDocuments(options.cwd, options))}\n${PARALLEL_TOOL_HINT}`;
 
   const agent = new ToolLoopAgent({
@@ -85,14 +85,14 @@ export function createOpenAICompatibleCodingAgent(options: OpenAICompatibleCodin
 }
 
 
-function safeCompactedMessages(messages: ModelMessage[], contextSize: number, logger: Logger): ModelMessage[] | undefined {
+function safeCompactedMessages(messages: readonly ModelMessage[], contextSize: number, logger: Logger): ModelMessage[] | undefined {
   if (!shouldCompact(messages, contextSize)) {
     return undefined;
   }
 
   try {
     return pruneMessages({
-      messages,
+      messages: [...messages],
       reasoning: "all",
       toolCalls: `before-last-${RECENT_TOOL_MESSAGES_TO_KEEP}-messages`,
       emptyMessages: "remove",

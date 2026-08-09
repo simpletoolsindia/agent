@@ -11,7 +11,6 @@ import { createDoctorReport } from "./doctor.js";
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const DEFAULT_PROVIDER_NAME = "openai-compatible";
 const DEFAULT_APPROVAL_MODE: ApprovalMode = "safe";
-const DEFAULT_TUI_CONTEXT_SIZE = "32768";
 const DEFAULT_UI_DENSITY = "compact";
 const APPROVAL_MODE_VALUES = ["safe", "auto"] as const;
 const PART_DISPLAY_MODES = ["full", "collapsed", "auto-collapsed", "hidden"] as const;
@@ -115,7 +114,7 @@ function registerAiCommand(command: Command): void {
 
     process.stdout.write(`${result.text}\n`);
     if (process.stdout.isTTY) {
-      process.stdout.write(`\n${renderCliPanel("Run complete · OMP-style flow", [
+      process.stdout.write(`\n${renderCliPanel("Run complete", [
         renderProgressSteps(["prompt", "think", "tools", "answer"], 3, process.stdout.columns ?? 88),
         "Agent response finished. Use `harness tui` for approvals, live tools, and animated progress.",
         "Next shortcuts: `--auto-approve`, `--agent-md AGENT.md`, `--skills-md SKILLS.md`.",
@@ -190,7 +189,7 @@ function addSharedAgentOptions(command: Command): Command {
 function addTuiOptions(command: Command): Command {
   const displayModes = PART_DISPLAY_MODES.join("|");
   return command
-    .option("--context-size <tokens>", "show context usage percentage in the TUI title", DEFAULT_TUI_CONTEXT_SIZE)
+    .option("--context-size <tokens>", "override auto-detected model context window shown in the TUI title")
     .option("--ui-density <mode>", `UI preset: ${UI_DENSITY_VALUES.join("|")}`, DEFAULT_UI_DENSITY)
     .option("--tool-display <mode>", `override tool display: ${displayModes}`)
     .option("--reasoning-display <mode>", `override reasoning display: ${displayModes}`)

@@ -475,7 +475,7 @@ function slashHelpText(settings: RuntimeSettings, compactEnabled: boolean, compa
     "## Command center",
     "",
     renderCliPanel("Slash deck", [
-      "`/settings menu`  OMP-style cockpit with segmented profile and examples.",
+      "`/settings menu`  Keyboard-first setup with segmented profile and examples.",
       "`/settings ollama`  Local Ollama in one command.",
       "`/settings auto`  Reduce approval friction in trusted workspaces.",
       "`/compact`  Prune old slash chatter and tool-heavy history.",

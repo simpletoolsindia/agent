@@ -2,6 +2,7 @@ import type { TerminalPartDisplayMode } from "@ai-sdk/tui";
 import { basename, resolve } from "node:path";
 import type { ApprovalMode } from "../ai/ai-tools.js";
 import type { OpenAICompatibleCodingAgentOptions } from "../ai/coding-agent.js";
+import { resolveContextSize } from "../ai/openai-compatible-runtime.js";
 import { createSlashCommandAgent } from "./slash-agent.js";
 import { maybeRunProviderSetup, type ProviderSetupMode } from "./provider-setup.js";
 import { applyModelConfig, loadModelConfig, saveModelConfig } from "./model-config.js";
@@ -35,8 +36,10 @@ export async function runOpenAICompatibleAiTui(options: OpenAICompatibleAiTuiOpt
   // Dynamic import is intentional: patchAiSdkTuiRenderer must update the dependency before module evaluation.
   const { runAgentTUI } = await import("@ai-sdk/tui");
   const approvalMode = configuredOptions.approvalMode ?? "safe";
+  const contextSize = resolveContextSize(configuredOptions.model, configuredOptions.contextSize);
   const agent = createSlashCommandAgent({
     ...configuredOptions,
+    contextSize,
     loggerScope: "tui",
     loggerLevel: "warn",
     resumeSession: configuredOptions.resumeSession,
@@ -51,12 +54,12 @@ export async function runOpenAICompatibleAiTui(options: OpenAICompatibleAiTuiOpt
       tools: configuredOptions.toolDisplay ?? DEFAULT_TOOL_DISPLAY,
       reasoning: configuredOptions.reasoningDisplay ?? DEFAULT_REASONING_DISPLAY,
       responseStatistics: "outputTokensPerSecond",
-      contextSize: configuredOptions.contextSize,
+      contextSize,
     });
   });
 }
 
 function formatTuiTitle(cwd: string, model: string, approvalMode: ApprovalMode): string {
   const workspaceName = basename(resolve(cwd)) || resolve(cwd);
-  return `π Harness · ${workspaceName} · ${model} · ${approvalMode} · ctx% · /settings /sessions /agents /compact`;
+  return `Coding Agent · ${workspaceName} · ${model} · ${approvalMode} · ctx% · /settings /sessions /agents /compact`;
 }

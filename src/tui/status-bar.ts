@@ -114,7 +114,7 @@ export function renderShimmerText(text: string, frame: number, sparkleChars: rea
   return output;
 }
 
-/** Modern OMP-style text sweep: cyan → blue → green → amber. */
+/** Modern terminal text sweep: cyan → blue → green → amber. */
 export function renderGradientText(text: string, phase: number = 0): string {
   let output = "";
   const chars = [...text];
@@ -144,8 +144,8 @@ export function renderCliPanel(title: string, rows: readonly string[], width: nu
 }
 
 export function renderCliSplash(model: string, cwd: string, approvalMode: string, width: number = 88): string {
-  return renderCliPanel("Harness AI · OMP cockpit", [
-    `${renderGradientText("Five-tool coding cockpit")} ${DIM}parallel search/read/bash · guarded write/update · resumable TUI${RESET}`,
+  return renderCliPanel("Coding Agent", [
+    `${renderGradientText("Five-tool coding workspace")} ${DIM}parallel search/read/bash · guarded write/update · resumable TUI${RESET}`,
     renderMetricStrip([
       { label: "model", value: model, tone: "busy" },
       { label: "approval", value: approvalMode, tone: approvalMode === "auto" ? "success" : "warn" },

@@ -14,9 +14,25 @@ export type InstructionDocument = {
 };
 
 
-export const DEFAULT_CONTEXT_SIZE = 32768;
+export const FALLBACK_CONTEXT_SIZE = 32768;
 
+const MODEL_CONTEXT_WINDOWS: readonly {
+  readonly pattern: RegExp;
+  readonly tokens: number;
+}[] = [
+  { pattern: /^gpt-4\.1(?:$|[-.])/i, tokens: 1_047_576 },
+  { pattern: /^gpt-4o(?:$|[-.])/i, tokens: 128_000 },
+  { pattern: /^o(?:3|4-mini)(?:$|[-.])/i, tokens: 200_000 },
+];
 
+export function resolveContextSize(model: string, explicitContextSize?: number): number {
+  if (explicitContextSize !== undefined) {
+    return explicitContextSize;
+  }
+
+  const normalizedModel = model.trim();
+  return MODEL_CONTEXT_WINDOWS.find(({ pattern }) => pattern.test(normalizedModel))?.tokens ?? FALLBACK_CONTEXT_SIZE;
+}
 const BASE_CODING_INSTRUCTIONS = [
   "You are a precise coding harness using five workspace tools: search, bash, write, update, read, plus one read-only subagent tool for context-heavy research.",
   "Completion contract: do not return a final answer until every user-requested item is implemented, affected docs are updated, focused verification has passed, and the todo list reflects the final state or an external blocker is explicitly named.",
