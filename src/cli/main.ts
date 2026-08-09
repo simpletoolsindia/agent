@@ -3,6 +3,7 @@ import { Command } from "commander";
 import type { ApprovalMode } from "../ai/ai-tools.js";
 import { runOpenAICompatibleAi } from "../ai/openai-compatible-ai.js";
 import { runOpenAICompatibleAiTui } from "../tui/ai-tui.js";
+import { renderActivityPulse, renderCliPanel, renderCliSplash } from "../tui/status-bar.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const DEFAULT_PROVIDER_NAME = "openai-compatible";
@@ -12,6 +13,12 @@ const DEFAULT_UI_DENSITY = "compact";
 const APPROVAL_MODE_VALUES = ["safe", "auto"] as const;
 const PART_DISPLAY_MODES = ["full", "collapsed", "auto-collapsed", "hidden"] as const;
 const UI_DENSITY_VALUES = ["compact", "normal", "debug"] as const;
+const CLI_SUGGESTIONS = [
+  "Use `search` before reading unknown code.",
+  "Use line ranges with `read` to keep prompts tight.",
+  "Use `update` for hash-guarded edits.",
+  "Use `harness tui` for approvals and live tool cards.",
+] as const;
 
 type TerminalPartDisplayMode = typeof PART_DISPLAY_MODES[number];
 type UiDensity = typeof UI_DENSITY_VALUES[number];
@@ -46,7 +53,7 @@ const UI_DENSITY_PRESETS: Record<UiDensity, {
 }> = {
   compact: {
     toolDisplay: "collapsed",
-    reasoningDisplay: "collapsed",
+    reasoningDisplay: "auto-collapsed",
   },
   normal: {
     toolDisplay: "auto-collapsed",
@@ -70,12 +77,23 @@ addSharedAgentOptions(
     .description("Run one OpenAI-compatible LLM request")
     .requiredOption("-p, --prompt <prompt>", "user prompt to send to the AI"),
 ).action(async (options: OneShotAgentCommandOptions) => {
-  const result = await runOpenAICompatibleAi({
-    ...toRuntimeOptions(options),
+  const runtimeOptions = toRuntimeOptions(options);
+  if (process.stdout.isTTY) {
+    process.stdout.write(`${renderCliSplash(runtimeOptions.model, runtimeOptions.cwd, runtimeOptions.approvalMode, process.stdout.columns ?? 88)}\n\n`);
+  }
+
+  const result = await runWithCliAnimation(process.stdout.isTTY === true, async () => await runOpenAICompatibleAi({
+    ...runtimeOptions,
     prompt: options.prompt,
-  });
+  }));
 
   process.stdout.write(`${result.text}\n`);
+  if (process.stdout.isTTY) {
+    process.stdout.write(`\n${renderCliPanel("Run complete", [
+      "Agent response finished. Use `harness tui` for approvals, live tools, and animated progress.",
+      "Next shortcuts: `--auto-approve`, `--agent-md AGENT.md`, `--skills-md SKILLS.md`.",
+    ], process.stdout.columns ?? 88)}\n`);
+  }
 });
 
 addTuiOptions(
@@ -198,4 +216,27 @@ function parsePartDisplayMode(value: string, optionName: string): TerminalPartDi
 
 function isPartDisplayMode(value: string): value is TerminalPartDisplayMode {
   return PART_DISPLAY_MODES.some((mode) => mode === value);
+}
+
+async function runWithCliAnimation<T>(enabled: boolean, action: () => Promise<T>): Promise<T> {
+  if (!enabled) {
+    return await action();
+  }
+
+  let frame = 0;
+  const writeFrame = () => {
+    const message = CLI_SUGGESTIONS[frame % CLI_SUGGESTIONS.length];
+    process.stdout.write(`\r\x1B[2K${renderActivityPulse("AI running", message, process.stdout.columns ?? 88, frame, "busy")}`);
+    frame += 1;
+  };
+
+  writeFrame();
+  const timer = setInterval(writeFrame, 180);
+  timer.unref?.();
+  try {
+    return await action();
+  } finally {
+    clearInterval(timer);
+    process.stdout.write("\r\x1B[2K");
+  }
 }

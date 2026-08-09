@@ -8,6 +8,17 @@ const DIM = `${ESC}[2m`;
 const BOLD = `${ESC}[1m`;
 const RESET = `${ESC}[0m`;
 
+export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+export const RICH_UI = {
+  green: GREEN,
+  yellow: YELLOW,
+  cyan: CYAN,
+  magenta: MAGENTA,
+  dim: DIM,
+  bold: BOLD,
+  reset: RESET,
+} as const;
+
 export type StatusTone = "idle" | "busy" | "success" | "warn";
 
 export function renderStatusBar(label: string, message: string, width: number, tone: StatusTone = "idle", progress?: number): string {
@@ -20,6 +31,30 @@ export function renderStatusBar(label: string, message: string, width: number, t
   const prefix = `${DIM}╭${RESET} ${color}${BOLD}${label}${RESET} ${bar} ${DIM}│${RESET}`;
   const available = Math.max(0, safeWidth - visibleLength(prefix) - 1);
   return `${prefix} ${clipAnsi(message, available)}`;
+}
+
+export function renderActivityPulse(label: string, message: string, width: number, frame: number, tone: StatusTone = "busy"): string {
+  const spinner = SPINNER_FRAMES[Math.abs(Math.trunc(frame)) % SPINNER_FRAMES.length];
+  const wave = 0.5 + Math.sin(frame / 2) * 0.25;
+  return renderStatusBar(`${spinner} ${label}`, message, width, tone, tone === "busy" ? wave : undefined);
+}
+
+export function renderCliPanel(title: string, rows: readonly string[], width: number = 88): string {
+  const safeWidth = Math.max(48, width);
+  const contentWidth = safeWidth - 4;
+  return [
+    `╭─ ${CYAN}${BOLD}${clipAnsi(title, Math.max(0, contentWidth - 3))}${RESET}${DIM}${"─".repeat(Math.max(0, contentWidth - visibleLength(title) - 2))}${RESET}╮`,
+    ...rows.map((row) => framedPanelLine(row, contentWidth)),
+    `╰${DIM}${"─".repeat(safeWidth - 2)}${RESET}╯`,
+  ].join("\n");
+}
+
+export function renderCliSplash(model: string, cwd: string, approvalMode: string, width: number = 88): string {
+  return renderCliPanel("Harness AI", [
+    `${CYAN}${BOLD}Five-tool coding cockpit${RESET} ${DIM}search · read · update · write · bash${RESET}`,
+    `${DIM}model${RESET} ${model}  ${DIM}approval${RESET} ${approvalMode}  ${DIM}workspace${RESET} ${cwd}`,
+    renderStatusBar("Ready", "Prompt accepted. Streaming agent work with live suggestions.", width - 4, "idle", 0.1),
+  ], width);
 }
 
 export function clipAnsi(text: string, width: number): string {
@@ -59,6 +94,12 @@ export function stripAnsi(text: string): string {
   return text.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
+
+function framedPanelLine(text: string, width: number): string {
+  const clipped = clipAnsi(text, width);
+  const padding = " ".repeat(Math.max(0, width - visibleLength(clipped)));
+  return `│ ${clipped}${padding} │`;
+}
 function ansiEndIndex(text: string, start: number): number {
   const match = /\x1B\[[0-?]*[ -/]*[@-~]/.exec(text.slice(start));
   return match?.index === 0 ? start + match[0].length : start + 1;

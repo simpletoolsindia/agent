@@ -1,6 +1,6 @@
 import type { ApprovalMode } from "../ai/ai-tools.js";
 import type { OpenAICompatibleCodingAgentOptions } from "../ai/coding-agent.js";
-import { clipAnsi, renderStatusBar, visibleLength } from "./status-bar.js";
+import { clipAnsi, renderActivityPulse, renderStatusBar, visibleLength } from "./status-bar.js";
 
 const ESC = "\x1B";
 const ENTER_ALT_SCREEN = `${ESC}[?1049h${ESC}[?25l`;
@@ -57,6 +57,7 @@ type ProviderSetupState = {
   readonly activeField: number;
   readonly values: MutableProviderSetupValues;
   readonly message?: string;
+  readonly frame?: number;
 };
 
 export type ProviderSetupMode = "auto" | "always" | "never";
@@ -119,6 +120,7 @@ export async function runProviderSetup(initial: ProviderSetupValues): Promise<Pr
       skillsMdPath: initial.skillsMdPath ?? "",
     },
     message: "Fill provider settings, then press Ctrl+S to start.",
+    frame: 0,
   };
   let current = state;
   const { promise, resolve, reject } = Promise.withResolvers<ProviderSetupValues>();
@@ -130,7 +132,13 @@ export async function runProviderSetup(initial: ProviderSetupValues): Promise<Pr
   }
 
   const repaint = () => output.write(`${CLEAR_SCREEN}${renderProviderSetupScreen(current, output.columns ?? 88)}`);
+  const animation = setInterval(() => {
+    current = { ...current, frame: (current.frame ?? 0) + 1 };
+    repaint();
+  }, 180);
+  animation.unref?.();
   const cleanup = () => {
+    clearInterval(animation);
     input.off("data", onData);
     if (input.isTTY) {
       input.setRawMode(originalRawMode);
@@ -272,21 +280,23 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
 export function renderProviderSetupScreen(state: ProviderSetupState, width: number): string {
   const safeWidth = Math.max(72, width);
   const contentWidth = safeWidth - 4;
+  const frame = state.frame ?? 0;
   const approval = normalizedApprovalMode(state.values.approvalMode, "safe") ?? "safe";
   const rows = [
     topBorder(safeWidth, " Provider setup "),
     framedLine(`${BOLD}${CYAN}Harness AI cockpit${RESET} ${DIM}modern setup for model, safety, and workspace context${RESET}`, contentWidth),
     framedLine(`${renderPill("model", state.values.model.trim().length === 0 ? "unset" : state.values.model.trim())} ${renderPill("approval", approval)} ${renderPill("endpoint", state.values.baseURL.trim().length === 0 ? "OpenAI default" : "custom")}`, contentWidth),
+    framedLine(renderActivityPulse("Setup", "Live keyboard navigation. Presets and validation update instantly.", contentWidth, frame, "busy"), contentWidth),
     framedLine("", contentWidth),
     renderSectionTitle("Connection", contentWidth),
-    ...FIELDS.slice(0, 4).flatMap((field, index) => renderFieldRows(state, field, index, contentWidth)),
+    ...FIELDS.slice(0, 4).flatMap((field, index) => renderFieldRows(state, field, index, contentWidth, frame)),
     renderSectionTitle("Workspace context", contentWidth),
-    ...FIELDS.slice(4).flatMap((field, offset) => renderFieldRows(state, field, offset + 4, contentWidth)),
+    ...FIELDS.slice(4).flatMap((field, offset) => renderFieldRows(state, field, offset + 4, contentWidth, frame)),
     framedLine("", contentWidth),
     framedLine(renderShortcutRow(["Tab/↓ next", "↑ previous", "Enter next/start", "Ctrl+S start"], contentWidth), contentWidth),
     framedLine(renderShortcutRow(["Ctrl+O Ollama", "Ctrl+A auto approval", "Ctrl+D OpenAI", "Ctrl+U clear", "Esc cancel"], contentWidth), contentWidth),
     framedLine("", contentWidth),
-    framedLine(renderStatusBar("Status", state.message ?? "Ready. Use Ctrl+O for Ollama or Ctrl+A for auto approval.", contentWidth, state.message === undefined ? "idle" : "busy"), contentWidth),
+    framedLine(renderStatusBar("Status", state.message ?? "Ready. Use Ctrl+O for Ollama or Ctrl+A for auto approval.", contentWidth, state.message === undefined ? "idle" : "busy", (state.activeField + 1) / FIELDS.length), contentWidth),
     bottomBorder(safeWidth),
   ];
   return rows.join("\n");
@@ -311,9 +321,9 @@ function validateProviderSetup(state: ProviderSetupState):
   return { type: "submit" };
 }
 
-function renderFieldRows(state: ProviderSetupState, field: ProviderSetupField, index: number, width: number): string[] {
+function renderFieldRows(state: ProviderSetupState, field: ProviderSetupField, index: number, width: number, frame: number): string[] {
   const active = state.activeField === index;
-  const marker = active ? `${GREEN}◆${RESET}` : `${DIM}◇${RESET}`;
+  const marker = active ? activeMarker(frame) : `${DIM}◇${RESET}`;
   const rawValue = state.values[field];
   const visibleValue = field === "apiKey" && rawValue.length > 0 ? "•".repeat(Math.min(rawValue.length, 32)) : rawValue;
   const value = visibleValue.length === 0 ? `${DIM}<empty>${RESET}` : active ? `${CYAN}${visibleValue}${RESET}` : visibleValue;
@@ -367,6 +377,10 @@ function framedLine(text: string, width: number): string {
   const clipped = clipAnsi(text, width);
   const padding = " ".repeat(Math.max(0, width - visibleLength(clipped)));
   return `│ ${clipped}${padding} │`;
+}
+
+function activeMarker(frame: number): string {
+  return frame % 2 === 0 ? `${GREEN}◆${RESET}` : `${MAGENTA}◆${RESET}`;
 }
 
 function renderSectionTitle(title: string, width: number): string {

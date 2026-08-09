@@ -7,7 +7,7 @@ import { createSlashCommandAgent, pickRuntimeSuggestion, withInlineProgress } fr
 import { reduceProviderSetupInput, renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
 import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
-import { renderStatusBar, visibleLength } from "../src/tui/status-bar.js";
+import { renderActivityPulse, renderCliSplash, renderStatusBar, visibleLength } from "../src/tui/status-bar.js";
 
 const workspace = join(process.cwd(), ".correctness-workspace");
 
@@ -280,6 +280,23 @@ async function main(): Promise<void> {
       && setupScreen.includes("Ctrl+A"),
   ));
 
+  const animatedSetupScreen = renderProviderSetupScreen({
+    activeField: 3,
+    values: {
+      model: "qwen2.5-coder:7b",
+      baseURL: "http://localhost:11434/v1",
+      apiKey: "ollama",
+      approvalMode: "safe",
+      agentMdPath: "AGENT.md",
+      skillsMdPath: "SKILLS.md",
+    },
+    frame: 1,
+  }, 88);
+  results.push(recordCheck(
+    "provider setup animates active marker",
+    setupScreen !== animatedSetupScreen && animatedSetupScreen.includes("⠙"),
+  ));
+
   const autoApprovalSetup = reduceProviderSetupInput({
     activeField: 3,
     values: {
@@ -301,6 +318,16 @@ async function main(): Promise<void> {
   results.push(recordCheck(
     "status bar renders bounded processing state",
     statusBar.includes("Processing") && statusBar.includes("▰") && visibleLength(statusBar) <= 48,
+  ));
+
+  const activityPulse = renderActivityPulse("AI running", "Use search before read", 56, 2, "busy");
+  const cliSplash = renderCliSplash("qwen2.5-coder:7b", workspace, "auto", 88);
+  results.push(recordCheck(
+    "rich CLI panels render animated affordances",
+    activityPulse.includes("⠹")
+      && activityPulse.includes("AI running")
+      && cliSplash.includes("Harness AI")
+      && cliSplash.includes("Five-tool coding cockpit"),
   ));
 
   const progressParts = await collectInlineProgressText();

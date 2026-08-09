@@ -11,7 +11,7 @@ import {
   type OpenAICompatibleCodingAgent,
   type OpenAICompatibleCodingAgentOptions,
 } from "../ai/coding-agent.js";
-import { renderStatusBar } from "./status-bar.js";
+import { renderActivityPulse, renderCliPanel, renderStatusBar } from "./status-bar.js";
 
 const SETTINGS_KEYS = ["model", "base-url", "api-key", "provider-name", "approval", "agent-md", "skills-md"] as const;
 const COMPACT_KEEP_MESSAGES = 8;
@@ -371,13 +371,13 @@ function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, comp
 
 function settingsHelpText(): string {
   return [
-    "## Settings commands",
+    "## Settings command deck",
     "",
     "| Command | Action |",
     "| --- | --- |",
-    "| `/settings menu` | Show setup shortcuts and active values. |",
+    "| `/settings menu` | Show the modern setup cockpit, active values, and examples. |",
     "| `/settings ollama` | Configure local Ollama defaults. |",
-    "| `/settings auto` or `/settings auto-approve` | Turn on auto approval for tools that support it. |",
+    "| `/settings auto` or `/settings auto-approve` | Turn on auto approval for trusted workspaces. |",
     "| `/settings safe` | Turn approval prompts back on. |",
     "| `/settings openai` | Use the default OpenAI endpoint. |",
     "| `/settings model <id>` | Switch model for future turns. |",
@@ -386,21 +386,22 @@ function settingsHelpText(): string {
     "| `/settings approval safe|auto` | Change tool approval mode. |",
     "| `/settings agent-md <path>` | Load additional agent instructions markdown. `none` unsets it. |",
     "| `/settings skills-md <path>` | Load additional skills markdown. `none` unsets it. |",
+    "",
+    `Tip: ${pickRuntimeSuggestion(1)}`,
   ].join("\n");
 }
 
 function slashHelpText(settings: RuntimeSettings, compactEnabled: boolean, compactRuns: number): string {
   return [
-    "## Slash commands",
+    "## Command center",
     "",
-    "| Command | Action |",
-    "| --- | --- |",
-    "| `/settings menu` | Show setup shortcuts, active config, and examples. |",
-    "| `/settings ollama` | Configure local Ollama in one command. |",
-    "| `/settings auto` | Turn on auto approval without remembering `approval auto`. |",
-    "| `/settings help` | Show all settings commands. |",
-    "| `/compact` | Prune old slash chatter and tool-heavy history for future turns. |",
-    "| `/agents` | Show built-in read-only subagent modes and delegation examples. |",
+    renderCliPanel("Slash deck", [
+      "`/settings menu`  Modern setup cockpit, active config, and examples.",
+      "`/settings ollama`  Local Ollama in one command.",
+      "`/settings auto`  Reduce approval friction in trusted workspaces.",
+      "`/compact`  Prune old slash chatter and tool-heavy history.",
+      "`/agents`  Show read-only subagent delegation modes.",
+    ], 78),
     "",
     formatSettings(settings, compactEnabled, compactRuns),
   ].join("\n");
@@ -410,7 +411,12 @@ function agentsHelpText(): string {
   return [
     "## Built-in subagents",
     "",
-    "Harness exposes one read-only `subagent` tool to the model. It offloads broad research into a separate context window, then returns a concise evidence-backed summary.",
+    renderCliPanel("Read-only delegation", [
+      "`research` maps unfamiliar code or collects references before an edit.",
+      "`review` checks a proposed change for regressions and missing verification.",
+      "`plan` creates a non-mutating implementation plan for larger work.",
+      "Main agent keeps edits and validation so context stays clean.",
+    ], 78),
     "",
     "| Role | Use when | Tools | Required input |",
     "| --- | --- | --- | --- |",
@@ -597,7 +603,7 @@ async function* animatedFullStream(resultPromise: Promise<unknown>): AsyncIterab
     yield {
       type: "reasoning-delta",
       id: "processing",
-      text: renderStatusBar("Processing", `Starting model stream. ${pickRuntimeSuggestion(suggestionIndex)}`, 72, "busy", 0.25),
+      text: renderActivityPulse("Processing", `Starting model stream. ${pickRuntimeSuggestion(suggestionIndex)}`, 72, ticks, "busy"),
     };
     while (!settled) {
       await delay(250);
@@ -607,7 +613,7 @@ async function* animatedFullStream(resultPromise: Promise<unknown>): AsyncIterab
         yield {
           type: "reasoning-delta",
           id: "processing",
-          text: `\n${renderStatusBar("Still running", pickRuntimeSuggestion(suggestionIndex), 72, "busy", 0.35)}`,
+          text: `\n${renderActivityPulse("Still running", pickRuntimeSuggestion(suggestionIndex), 72, ticks, "busy")}`,
         };
       }
     }
@@ -643,7 +649,7 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: `\n${renderStatusBar("Suggestion", pickRuntimeSuggestion(suggestionIndex), 72, "idle", 0.15)}`,
+        text: `\n${renderActivityPulse("Suggestion", pickRuntimeSuggestion(suggestionIndex), 72, suggestionIndex, "idle")}`,
       };
       continue;
     }
@@ -666,7 +672,7 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: renderStatusBar(`Step ${step}`, `Thinking. ${pickRuntimeSuggestion(suggestionIndex)}`, 72, "busy", 0.3),
+        text: renderActivityPulse(`Step ${step}`, `Thinking. ${pickRuntimeSuggestion(suggestionIndex)}`, 72, step, "busy"),
       };
       continue;
     }

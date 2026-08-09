@@ -151,7 +151,7 @@ npm run cli -- ai \
   --api-key ollama
 ```
 
-Run the terminal UI. The default UI density is `compact`, so tool-heavy sessions stay readable:
+Run the terminal UI. The default UI density is `compact`, so tool-heavy sessions stay readable while the interface stays rich and animated:
 
 ```bash
 npm run tui -- \
@@ -162,7 +162,7 @@ npm run tui -- \
   --ui-density compact
 ```
 
-The TUI opens a modern setup cockpit when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, approval mode, `agent.md`, and `skills.md` before the chat starts. The screen groups connection and workspace context fields, shows active profile chips, and keeps status/progress bounded so setup messages do not overlap narrow terminals. During model/tool work the TUI shows inline progress plus rotating usage suggestions such as when to use `search`, `read`, `update`, `write`, `bash`, `/settings`, and `/compact`. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
+The one-shot CLI shows a rich cockpit header on interactive terminals, then animates an in-place `AI running` status line with practical usage suggestions until the response is ready. The TUI opens a modern setup cockpit when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, approval mode, `agent.md`, and `skills.md` before the chat starts. The screen groups connection and workspace context fields, shows active profile chips, animates the active field marker, and keeps status/progress bounded so setup messages do not overlap narrow terminals. During model/tool work the TUI shows inline progress plus rotating usage suggestions such as when to use `search`, `read`, `update`, `write`, `bash`, `/settings`, and `/compact`. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
 
 UI density presets:
 
