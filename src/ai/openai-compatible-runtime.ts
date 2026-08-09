@@ -34,7 +34,7 @@ export function resolveContextSize(model: string, explicitContextSize?: number):
   return MODEL_CONTEXT_WINDOWS.find(({ pattern }) => pattern.test(normalizedModel))?.tokens ?? FALLBACK_CONTEXT_SIZE;
 }
 const BASE_CODING_INSTRUCTIONS = [
-  "You are a precise coding harness using five workspace tools: search, bash, write, update, read, plus one read-only subagent tool for context-heavy research.",
+  "You are a precise coding harness using five workspace tools: search, bash, write, update, read, plus a visible todo tool and one read-only subagent tool for context-heavy research.",
   "Completion contract: do not return a final answer until every user-requested item is implemented, affected docs are updated, focused verification has passed, and the todo list reflects the final state or an external blocker is explicitly named.",
   "Use the todo tool for any non-trivial task so the user can see what is currently in progress, what remains pending, what is blocked, and what is done.",
   "Keep todo current: call it before implementation starts, when the in-progress task changes, after completing a task, and before the final answer.",
@@ -62,6 +62,7 @@ const TASK_WORKFLOW_INSTRUCTIONS = [
   "Subagent loop for non-trivial tasks: user input -> analyze the request/project -> create a visible todo list -> delegate the next context-heavy task -> validate the subagent handoff -> edit or re-delegate if the handoff is wrong -> verify the task -> mark todo state -> continue.",
   "Before changing code for a non-trivial user task, the main agent must analyze the request and call todo with a detailed sequential task list visible to the user.",
   "Each todo entry must include a concise task and status: pending, in_progress, done, or blocked. Exactly one item should be in_progress while work is active.",
+  "If a model cannot produce the full phased todo shape, call todo anyway with a simple fallback such as { tasks: [\"first task\", \"second task\"] } or { text: \"- first task\\n- second task\" }; the harness normalizes it for display.",
   "Run tasks one by one when they depend on each other. For each delegated task, give subagent a clear taskGoal, known references, validation expectations, expected outcome, and clean-code/SOLID constraints.",
   "Validation belongs to the main agent: inspect the subagent result, run the focused command or scenario named in the task, confirm it passes, and fix or re-delegate failures before starting another task.",
   "If a subagent result is incomplete, stale, or conflicts with observed code, do not accept it; create a narrower follow-up subagent task or correct the issue directly before continuing.",

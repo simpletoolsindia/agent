@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v17 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v18 */";
 
 /**
  * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
@@ -654,6 +654,7 @@ function harnessToolOutputHelpers(): string {
     "  const rows = [];",
     "  rows.push(current === void 0 ? \"Current: none\" : `Current: ${sliceMiddle(current, 48)}`);",
     "  rows.push(`Pending: ${totals.pending}  Done: ${totals.done}/${totals.total}`);",
+    "  if (payload.fallback === true) rows.push(\"Fallback: generated safe default plan\");",
     "  phases.slice(0, 6).forEach((phase, phaseIndex) => {",
     "    const items = Array.isArray(phase.items) ? phase.items : Array.isArray(phase.tasks) ? phase.tasks : [];",
     "    const phaseTotals = todoTotals([phase]);",

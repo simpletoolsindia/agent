@@ -6,6 +6,7 @@ import type { ToolResult } from "../src/core/registry.js";
 import { createSlashCommandAgent, pickRuntimeSuggestion, withInlineProgress } from "../src/tui/slash-agent.js";
 import { reduceProviderSetupInput, renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
 import { createCodingInstructions, resolveContextSize } from "../src/ai/openai-compatible-runtime.js";
+import { normalizeTodoInput } from "../src/ai/todo-tool.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
 import { renderActivityPulse, renderCliSplash, renderGradientText, renderMetricStrip, renderProgressBar, renderProgressSteps, renderShimmerText, renderStatusBar, stripAnsi, visibleLength } from "../src/tui/status-bar.js";
 import { patchAiSdkTuiRenderer } from "../src/tui/ai-sdk-tui-patch.js";
@@ -319,9 +320,24 @@ async function main(): Promise<void> {
     codingAgentSource.includes("\"todo\", \"subagent\"")
       && aiToolsSource.includes("tools.todo = createTodoTool()")
       && aiToolsSource.includes("approvals.todo = \"not-applicable\"")
-      && todoToolSource.includes("status: { enum: [\"pending\", \"in_progress\", \"done\", \"blocked\"] }")
-      && todoToolSource.includes("current")
-      && todoToolSource.includes("pending"),
+      && todoToolSource.includes("strict: false")
+      && todoToolSource.includes("normalizeTodoInput")
+      && todoToolSource.includes("FALLBACK_TASK")
+      && todoToolSource.includes("fallback"),
+  ));
+  const fallbackTodo = normalizeTodoInput({ tasks: ["Inspect repo", "Implement fix"] });
+  const textTodo = normalizeTodoInput({ text: "[x] Research\n[>] Implement\n[!] Blocked review" });
+  const emptyTodo = normalizeTodoInput({});
+  results.push(recordCheck(
+    "todo fallback normalizes weak model outputs",
+    fallbackTodo.current === "Todo: Inspect repo"
+      && fallbackTodo.pending === 2
+      && fallbackTodo.total === 2
+      && textTodo.done === 1
+      && textTodo.pending === 2
+      && textTodo.current === "Todo: Implement"
+      && emptyTodo.fallback === true
+      && emptyTodo.current === "Todo: Continue requested work",
   ));
 
 
@@ -506,7 +522,7 @@ async function main(): Promise<void> {
   const progressSteps = renderProgressSteps(["think", "tools", "answer"], 1, 48);
   const gradientBar = renderProgressBar({ current: 65, total: 100, width: 12, gradient: true });
   const gradientText = renderGradientText("Modern");
-  const shimmerText = renderShimmerText("Processing", 2);
+  const shimmerText = renderShimmerText("Processing", 1);
   results.push(recordCheck(
     "shared rich primitives render cool-palette progress UI",
     metricStrip.includes("╭─")
@@ -522,7 +538,7 @@ async function main(): Promise<void> {
   const patchedTuiSource = await readFile("node_modules/@ai-sdk/tui/dist/index.js", "utf8");
   results.push(recordCheck(
     "TUI tool and reasoning outputs use referenced box frames",
-    patchedTuiSource.includes("rich tui patch v17")
+    patchedTuiSource.includes("rich tui patch v18")
       && patchedTuiSource.includes("renderHarnessOutputBox")
       && patchedTuiSource.includes("harnessSeparator")
       && patchedTuiSource.includes("formatHarnessBashFrame")
@@ -530,6 +546,7 @@ async function main(): Promise<void> {
       && patchedTuiSource.includes("formatHarnessTodoFrame")
       && patchedTuiSource.includes("formatHarnessSubagentFrame")
       && patchedTuiSource.includes("Live status")
+      && patchedTuiSource.includes("Fallback: generated safe default plan")
       && patchedTuiSource.includes("Interrupt: Esc/Ctrl+C")
       && patchedTuiSource.includes("Interrupted · type what should happen next")
       && patchedTuiSource.includes("streamWithoutPrompt = false")
