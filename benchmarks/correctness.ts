@@ -244,7 +244,7 @@ async function main(): Promise<void> {
   results.push(recordCheck("slash compact returns local confirmation", compactText.includes("Context compacted")));
 
   const agentsText = await collectSlashText(slashAgent, "/agents");
-  results.push(recordCheck("slash agents documents subagent roles", agentsText.includes("Built-in subagents") && agentsText.includes("research") && agentsText.includes("review") && agentsText.includes("plan")));
+  results.push(recordCheck("slash agents documents subagent roles", agentsText.includes("Built-in subagents") && agentsText.includes("research") && agentsText.includes("review") && agentsText.includes("plan") && agentsText.includes("compact handoff")));
   const sessionsText = await collectSlashText(slashAgent, "/sessions");
   results.push(recordCheck("slash sessions lists resumable store", sessionsText.includes("Saved sessions") || sessionsText.includes("No saved sessions")));
 
@@ -253,10 +253,21 @@ async function main(): Promise<void> {
     "coding instructions include completion and subagent workflow",
     instructions.includes(`Current folder path: ${workspace}`)
       && instructions.includes("Completion contract")
-      && instructions.includes("Use subagent immediately")
+      && instructions.includes("Keep the main context small")
+      && instructions.includes("Subagent loop for non-trivial tasks")
+      && instructions.includes("re-delegate if the handoff is wrong")
       && instructions.includes("Do not run git commands")
       && instructions.includes("parallel")
       && instructions.includes("Clean-code target")
+  ));
+
+  const subagentSource = await readFile("src/ai/subagent-tool.ts", "utf8");
+  results.push(recordCheck(
+    "subagent handoff stays bounded for context control",
+    subagentSource.includes("MAX_SUBAGENT_SUMMARY_CHARS = 5000")
+      && subagentSource.includes("MAX_SUBAGENT_SUMMARY_LINES = 80")
+      && subagentSource.includes("compactSubagentSummary")
+      && subagentSource.includes("main agent keeps a small working context"),
   ));
 
   const contextInstructions = createCodingInstructions(workspace, loadInstructionDocuments(workspace, {
@@ -403,7 +414,7 @@ async function main(): Promise<void> {
   const patchedTuiSource = await readFile("node_modules/@ai-sdk/tui/dist/index.js", "utf8");
   results.push(recordCheck(
     "TUI tool and reasoning outputs use referenced box frames",
-    patchedTuiSource.includes("rich tui patch v9")
+    patchedTuiSource.includes("rich tui patch v10")
       && patchedTuiSource.includes("renderHarnessOutputBox")
       && patchedTuiSource.includes("harnessSeparator")
       && patchedTuiSource.includes("formatHarnessBashFrame")
@@ -411,6 +422,7 @@ async function main(): Promise<void> {
       && patchedTuiSource.includes("formatHarnessTodoFrame")
       && patchedTuiSource.includes("formatHarnessSubagentFrame")
       && patchedTuiSource.includes("Live status")
+      && patchedTuiSource.includes("summary compacted for main context")
       && patchedTuiSource.includes("formatHarnessReasoningFrame")
       && patchedTuiSource.includes("Think · live")
       && patchedTuiSource.includes("live reasoning stream")

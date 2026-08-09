@@ -97,12 +97,14 @@ The public promise is exactly these five workspace tools. The `subagent` adapter
    - one AI tool bundle,
    - one `ToolLoopAgent`.
 3. `createCodingInstructions` builds model instructions from base rules plus optional workspace markdown files.
-4. `ToolLoopAgent` streams model steps.
-5. Tool calls enter `createAiToolBundle` adapters.
-6. Adapters call `registry.run(toolName, input, context)`.
-7. Registry validates input, executes the tool, logs, and returns a compact `ToolResult`.
-8. Failed tool results are inspected in the next step; `formatFailureHint` appends targeted recovery instructions.
-9. Long histories are compacted with `pruneMessages` when estimated tokens exceed the configured context threshold.
+4. For non-trivial work the main agent follows the context-preserving loop: analyze user input and project shape, create a sequential todo list, delegate the next context-heavy research/review/plan task, validate the compact subagent handoff, edit or re-delegate when the handoff is wrong, verify the task, then mark todo state and continue.
+5. `ToolLoopAgent` streams model steps.
+6. Tool calls enter `createAiToolBundle` adapters.
+7. Adapters call `registry.run(toolName, input, context)`.
+8. Registry validates input, executes the tool, logs, and returns a compact `ToolResult`.
+9. Subagent calls run a separate read-only `ToolLoopAgent` with only `search` and `read`; its final handoff is bounded to 80 lines / 5000 characters before it returns to the main context.
+10. Failed tool results are inspected in the next step; `formatFailureHint` appends targeted recovery instructions.
+11. Long histories are compacted with `pruneMessages` when estimated tokens exceed the configured context threshold.
 
 ## CLI and TUI split
 
@@ -133,6 +135,10 @@ This keeps command parsing independent from model/tool behavior.
 - `write`, `update`, and `bash` require `user-approval` in `safe` mode.
 - All tools are `not-applicable` in `auto` mode.
 - `subagent` is always read-only and does not require approval.
+
+## Subagent orchestration
+
+The subagent is a context offload, not an autonomous committer. The main agent owns task analysis, todo state, edits, validation, and the final user summary. A delegated task carries a concrete goal, current folder, known references, implementation/validation expectations, expected outcome, and clean-code/SOLID constraints. The subagent returns exact paths, symbols, evidence, risks, and next action in a bounded handoff. The main agent must validate that handoff against observed code and focused verification; if it is incomplete or stale, the main agent either asks a narrower subagent follow-up or fixes the issue directly before starting the next task.
 
 ## Error and recovery flow
 

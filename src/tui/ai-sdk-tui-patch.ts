@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v9 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v10 */";
 
 /**
  * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
@@ -433,6 +433,7 @@ function harnessToolOutputHelpers(): string {
     "  const summary = typeof payload.summary === \"string\" ? payload.summary : formatValue(payload);",
     "  const elapsed = output && typeof output === \"object\" && typeof output.elapsedMs === \"number\" ? `Wall: ${Math.max(0, output.elapsedMs / 1000).toFixed(2)}s` : void 0;",
     "  const rows = [`Goal: ${sliceMiddle(goal, 48)}`, ...summary.split(\"\\n\").filter((line) => line.length > 0).slice(0, 10)];",
+    "  if (payload.summaryTruncated === true) rows.push(\"⟦summary compacted for main context⟧\");",
     "  if (elapsed !== void 0) rows.push(`⟦${elapsed}⟧`);",
     "  return renderHarnessOutputBox(`◇ Subagent: ${role} ⟦done⟧`, \"Result\", rows);",
     "}",

@@ -4,6 +4,8 @@ import type { ToolRegistry } from "../core/registry.js";
 import { createOpenAICompatibleChatModel, type OpenAICompatibleModelOptions } from "./openai-compatible-runtime.js";
 
 const SUBAGENT_TOOL_ORDER = ["search", "read"] as const;
+const MAX_SUBAGENT_SUMMARY_CHARS = 5000;
+const MAX_SUBAGENT_SUMMARY_LINES = 80;
 
 const SUBAGENT_INPUT_SCHEMA = {
   type: "object",
@@ -75,6 +77,7 @@ type SubagentOutput = {
   readonly role: "research" | "review" | "plan";
   readonly taskGoal: string;
   readonly summary: string;
+  readonly summaryTruncated: boolean;
   readonly elapsedMs: number;
 };
 
@@ -89,9 +92,9 @@ export function createSubagentTool(
     title: "Subagent · Context offload",
     metadata: { safety: "read-only" },
     description: [
-      "Delegate context-heavy research, review, or planning to a read-only subagent.",
-      "Use this before reading many files yourself. Only taskGoal is required; include referenceFiles when known.",
-      "The subagent can use search and read, then returns a concise evidence-backed summary for the main agent to validate.",
+      "Delegate context-heavy research, review, or planning to a read-only subagent so the main agent keeps a small working context.",
+      "Use this before reading many files yourself. Send one clear taskGoal plus any known referenceFiles, validation, and expectedOutcome.",
+      "The subagent uses only search/read, returns a bounded evidence handoff, and the main agent validates before moving to the next task.",
     ].join(" "),
     inputSchema: jsonSchema(SUBAGENT_INPUT_SCHEMA as never),
     strict: true,
@@ -115,12 +118,14 @@ export function createSubagentTool(
           abortSignal: executionOptions.abortSignal,
         });
 
+        const summary = compactSubagentSummary(result.text);
         return {
           ok: true,
           output: {
             role,
             taskGoal: parsed.taskGoal,
-            summary: result.text,
+            summary: summary.text,
+            summaryTruncated: summary.truncated,
             elapsedMs: performance.now() - started,
           } satisfies SubagentOutput,
           elapsedMs: performance.now() - started,
@@ -177,9 +182,9 @@ function readonlyRegistryTool(name: "search" | "read", registry: ToolRegistry, c
 
 function formatSubagentPrompt(input: SubagentInput, workspaceRoot: string): string {
   const referenceFiles = input.referenceFiles ?? [];
-  const implementationSteps = input.implementationSteps ?? ["Map the relevant code or references", "Summarize evidence and risks"];
-  const validation = input.validation ?? ["Main agent validates the completed implementation"];
-  const expectedOutcome = input.expectedOutcome ?? "Relevant files, symbols, evidence, and the smallest useful next action are summarized.";
+  const implementationSteps = input.implementationSteps ?? ["Map only the relevant code or references", "Return a compact evidence handoff with exact paths/symbols", "Name risks, assumptions, and the smallest useful next action"];
+  const validation = input.validation ?? ["Main agent validates the handoff before editing or moving to the next task"];
+  const expectedOutcome = input.expectedOutcome ?? "A bounded summary the main agent can validate without importing broad context.";
   return [
     `# Task goal\n${input.taskGoal}`,
     `# Current folder path\n${input.currentFolderPath ?? workspaceRoot}`,
@@ -190,14 +195,34 @@ function formatSubagentPrompt(input: SubagentInput, workspaceRoot: string): stri
   ].join("\n\n");
 }
 
+function compactSubagentSummary(text: string): { readonly text: string; readonly truncated: boolean } {
+  const lines = text.split("\n");
+  const lineLimited = lines.length > MAX_SUBAGENT_SUMMARY_LINES;
+  const limitedLines = lineLimited ? lines.slice(0, MAX_SUBAGENT_SUMMARY_LINES) : lines;
+  const joined = limitedLines.join("\n").trim();
+  if (joined.length <= MAX_SUBAGENT_SUMMARY_CHARS) {
+    return {
+      text: lineLimited ? `${joined}\n\n[Subagent summary truncated to ${MAX_SUBAGENT_SUMMARY_LINES} lines.]` : joined,
+      truncated: lineLimited,
+    };
+  }
+
+  return {
+    text: `${joined.slice(0, MAX_SUBAGENT_SUMMARY_CHARS).trimEnd()}\n\n[Subagent summary truncated to ${MAX_SUBAGENT_SUMMARY_CHARS} characters.]`,
+    truncated: true,
+  };
+}
+
 function subagentInstructions(role: SubagentOutput["role"]): string {
   const base = [
     "You are a read-only coding subagent running inside a TypeScript harness.",
+    "Your job is to reduce the main agent's context load: inspect broad context, then return a compact handoff instead of raw exploration notes.",
     "Use only search and read. Never ask for approval. Never modify files. Never run commands.",
     "Search before reading unknown files. Prefer focused slices over full files.",
     "Do not request or suggest git commands for repository context; the main agent should use search and read.",
+    "Do not paste full files. Quote only the smallest evidence lines needed to justify the handoff.",
     "Evaluate plans against clean-code readability and SOLID boundaries: single responsibility, narrow interfaces, substitutable contracts, and dependency inversion.",
-    "Your final answer is returned to the main agent; include exact paths, symbols, and evidence.",
+    "Final answer contract: <=80 lines and <=5000 characters; include exact paths/symbols, evidence, risks, validation ideas, and the next action for the main agent.",
   ];
 
   if (role === "review") {

@@ -432,9 +432,11 @@ CLI and TUI use the same `ToolLoopAgent` setup:
 - targeted recovery hints after failed tool results
 - automatic context compaction for long sessions
 - read-only subagent delegation for broad research, review, and non-mutating plans; only `taskGoal` is required, with optional reference files when known
+- subagent summaries are bounded handoffs (`<=80` lines / `<=5000` characters) so broad exploration does not fill the main agent context
 - high safety step limit for long tasks; the model is instructed not to final-answer while requested work remains
-- non-trivial tasks start with a sequential task list containing goal, current folder path, reference files, implementation steps, validation, expected outcome, and clean-code/SOLID notes
-- subagent calls are encouraged for context-heavy steps, then the main agent inspects the result, validates the task, and continues
+- non-trivial tasks follow the main loop: analyze user input and project, create a sequential todo list, delegate the next context-heavy task, validate the subagent handoff, edit or re-delegate when the handoff is wrong, verify the task, mark todo state, and continue
+- each delegated task carries goal, current folder path, reference files, implementation steps, validation expectations, expected outcome, and clean-code/SOLID constraints
+- the main agent owns edits and validation: it inspects subagent results, runs focused verification, corrects failures before the next task, validates the overall outcome, and summarizes changes to the user
 - repository context comes from `search` and `read`; the agent is instructed not to run git commands just to provide context to the LLM
 - optional `--agent-md <path>` and `--skills-md <path>` append workspace markdown instructions to the agent prompt
 - independent `subagent`, `search`, `read`, and `bash` calls are issued in the same model step when possible so the AI SDK executes them in parallel; `write` and `update` stay serialized when they touch the same file
