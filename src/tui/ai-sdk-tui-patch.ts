@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v7 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v9 */";
 
 /**
  * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
@@ -43,8 +43,11 @@ export async function patchAiSdkTuiRenderer(): Promise<void> {
   patched = replaceIfPresent(patched, originalBottomBorder(), patchedBottomBorder());
   patched = replaceIfPresent(patched, currentViewportProgress(), patchedViewportProgress());
   patched = stripHarnessToolHelpers(patched);
+  patched = stripHarnessToolStatusBlocks(patched);
   patched = replaceIfPresent(patched, previousToolStatusLine(), originalToolStatusLine());
   patched = replaceIfPresent(patched, originalToolOutputContent(), patchedToolOutputContent());
+  patched = replaceIfPresent(patched, originalReasoningSection("Reasoning"), patchedReasoningSection());
+  patched = replaceIfPresent(patched, originalReasoningSection("Thinking"), patchedReasoningSection());
   patched = replaceIfPresent(patched, originalToolStatusLine(), patchedToolStatusLine());
   if (!patched.includes("function formatHarnessToolFrame(")) {
     patched = replaceOnce(patched, "function shouldCollapsePart(message, partIndex, mode, displayModes) {", `${harnessToolOutputHelpers()}\nfunction shouldCollapsePart(message, partIndex, mode, displayModes) {`);
@@ -65,6 +68,13 @@ function replaceOnce(source: string, search: string, replacement: string): strin
 
 function stripHarnessToolHelpers(source: string): string {
   return source.replace(/function formatHarnessTool(?:Frame|Output)\([\s\S]*?\nfunction shouldCollapsePart\(message, partIndex, mode, displayModes\) \{/u, "function shouldCollapsePart(message, partIndex, mode, displayModes) {");
+}
+
+function stripHarnessToolStatusBlocks(source: string): string {
+  return source.replace(
+    /  if \(options\.collapsed\) \{\n    const harnessFrame = formatHarnessToolFrame\(toolName, inputText, part, status\);\n    if \(harnessFrame !== void 0\) \{\n      return \{\n        kind: part\.state === "output-error" \|\| part\.state === "output-denied" \? "error" : "tool",\n        title,\n        rightTitle: status,\n        content: harnessFrame\n      \};\n    \}\n  \}\n/gu,
+    "",
+  );
 }
 
 function replaceIfPresent(source: string, search: string, replacement: string): string {
@@ -269,6 +279,63 @@ function patchedToolStatusLine(): string {
   ].join("\n");
 }
 
+function originalReasoningSection(title: "Reasoning" | "Thinking"): string {
+  return [
+    "      case \"reasoning\": {",
+    "        const content = part.text.trim();",
+    "        if (displayModes.reasoning === \"hidden\" || content.length === 0) {",
+    "          break;",
+    "        }",
+    "        activeSectionIds.add(id);",
+    "        __privateMethod(this, _TerminalRenderer_instances, upsertSection_fn).call(this, {",
+    "          id,",
+    "          kind: \"reasoning\",",
+    `          title: "${title}",`,
+    "          content,",
+    "          collapsed: shouldCollapsePart(",
+    "            message,",
+    "            index,",
+    "            displayModes.reasoning,",
+    "            displayModes",
+    "          )",
+    "        });",
+    "        break;",
+    "      }",
+  ].join("\n");
+}
+
+function patchedReasoningSection(): string {
+  return [
+    "      case \"reasoning\": {",
+    "        const rawContent = part.text.trim();",
+    "        if (displayModes.reasoning === \"hidden\") {",
+    "          break;",
+    "        }",
+    "        const content = rawContent.length === 0 ? \"Thinking…\" : rawContent;",
+    "        const collapsed = shouldCollapsePart(",
+    "          message,",
+    "          index,",
+    "          displayModes.reasoning,",
+    "          displayModes",
+    "        );",
+    "        activeSectionIds.add(id);",
+    "        __privateMethod(this, _TerminalRenderer_instances, upsertSection_fn).call(this, {",
+    "          id,",
+    "          kind: \"reasoning\",",
+    "          title: \"Think · live\",",
+    "          rightTitle: collapsed ? \"queued\" : \"streaming\",",
+    "          content: formatHarnessReasoningFrame(content),",
+    "          collapsed",
+    "        });",
+    "        break;",
+    "      }",
+  ].join("\n");
+}
+
+
+// Reasoning and tool surfaces share one narrow box grammar so the stream
+// stays scannable while content updates in place.
+
 
 // Tool cards are rendered with one grammar across read/search/write/update/bash:
 // `Icon Action: badge target ⟦status⟧` followed by bounded preview rows.
@@ -279,6 +346,9 @@ function harnessToolOutputHelpers(): string {
     "  if (\"output\" in part) {",
     "    return formatHarnessToolOutput(toolName, inputText, part.output);",
     "  }",
+    "  if (toolName === \"subagent\") {",
+    "    return formatHarnessSubagentFrame(part, status);",
+    "  }",
     "  if (part.state === \"output-error\") {",
     "    return formatHarnessFrame(toolName, void 0, status, [`error: ${part.errorText}`]);",
     "  }",
@@ -287,6 +357,13 @@ function harnessToolOutputHelpers(): string {
     "    return formatHarnessFrame(toolName, toolInputTarget(toolName, \"input\" in part ? part.input : void 0), status, [`reason: ${reason}`]);",
     "  }",
     "  return formatHarnessFrame(toolName, toolInputTarget(toolName, \"input\" in part ? part.input : void 0), status, harnessInputRows(\"input\" in part ? part.input : void 0));",
+    "}",
+    "function formatHarnessReasoningFrame(content) {",
+    "  const cleanLines = content.split(\"\\n\").map((line) => line.trim()).filter((line) => line.length > 0);",
+    "  const visibleLines = cleanLines.length === 0 ? [\"Thinking…\"] : cleanLines.slice(-8);",
+    "  const rows = visibleLines.map((line, index) => `${index === visibleLines.length - 1 ? \"→\" : \"·\"} ${line}`);",
+    "  rows.push(\"⟦live reasoning stream⟧\");",
+    "  return renderHarnessOutputBox(\"◌ Thinking: live reasoning ⟦streaming⟧\", \"Reasoning\", rows);",
     "}",
     "function formatHarnessToolOutput(toolName, inputText, output) {",
     "  const payload = harnessToolPayload(output);",
@@ -297,6 +374,15 @@ function harnessToolOutputHelpers(): string {
     "    const added = typeof change.addedLines === \"number\" ? change.addedLines : countHarnessDiff(diff).added;",
     "    const removed = typeof change.removedLines === \"number\" ? change.removedLines : countHarnessDiff(diff).removed;",
     "    return formatHarnessDiffFrame(path, diff, added, removed);",
+    "  }",
+    "  if (toolName === \"bash\" && payload && typeof payload === \"object\") {",
+    "    return formatHarnessBashFrame(payload, output);",
+    "  }",
+    "  if (toolName === \"subagent\" && payload && typeof payload === \"object\") {",
+    "    return formatHarnessSubagentResultFrame(payload, output);",
+    "  }",
+    "  if (toolName === \"todo\" && payload && typeof payload === \"object\") {",
+    "    return formatHarnessTodoFrame(payload);",
     "  }",
     "  return formatHarnessFrame(toolName, toolOutputTarget(toolName, payload), toolOutputStatus(toolName, payload), harnessOutputRows(toolName, payload, output));",
     "}",
@@ -312,19 +398,99 @@ function harnessToolOutputHelpers(): string {
     "function formatHarnessFrame(toolName, target, status, rows) {",
     "  const meta = harnessToolMeta(toolName);",
     "  const safeTarget = target === void 0 || target.length === 0 ? toolName : target;",
-    "  const title = formatHarnessCardTitle(meta.icon, meta.label, meta.badge, safeTarget, status);",
-    "  return [title, ...rows.slice(0, 18).map((row) => `│ ${row}`), \"╰─\"].join(\"\\n\");",
+    "  return renderHarnessOutputBox(`${meta.icon} ${meta.label}: ${meta.badge} ${sliceMiddle(safeTarget, 36)} ⟦${status}⟧`, \"Output\", rows.slice(0, 18));",
     "}",
     "function formatHarnessDiffFrame(path, diff, added, removed) {",
-    "  const title = formatHarnessCardTitle(\"✎\", \"Edit\", \"🟦\", path, `+${added}/-${removed}`);",
-    "  const rows = harnessDiffRows(diff);",
-    "  return [title, ...rows, \"╰─\"].join(\"\\n\");",
+    "  const command = `✎ Edit: 🟦 ${sliceMiddle(path, 40)} ⟦+${added}/-${removed}⟧`;",
+    "  return renderHarnessOutputBox(command, \"Diff\", harnessDiffRows(diff));",
     "}",
-    "function formatHarnessCardTitle(icon, label, badge, target, status) {",
-    "  const head = `╭─ ${icon} ${label}: ${badge} ${sliceMiddle(target, 38)} `;",
-    "  const tail = ` ⟦${status}⟧`;",
-    "  const rule = \"─\".repeat(Math.max(1, 78 - visibleLength(head) - visibleLength(tail)));",
-    "  return `${head}${rule}${tail}`;",
+    "function formatHarnessBashFrame(payload, output) {",
+    "  const command = typeof payload.command === \"string\" ? payload.command : \"bash\";",
+    "  const cwd = typeof payload.cwd === \"string\" && payload.cwd.length > 0 && payload.cwd !== \".\" ? `cd ${payload.cwd} && ` : \"\";",
+    "  const rows = [];",
+    "  if (typeof payload.stdout === \"string\" && payload.stdout.length > 0) {",
+    "    rows.push(...payload.stdout.split(\"\\n\").filter((line) => line.length > 0).slice(0, 12));",
+    "  }",
+    "  if (typeof payload.stderr === \"string\" && payload.stderr.length > 0) {",
+    "    rows.push(...payload.stderr.split(\"\\n\").filter((line) => line.length > 0).slice(0, 6));",
+    "  }",
+    "  const elapsed = output && typeof output === \"object\" && typeof output.elapsedMs === \"number\" ? `Wall: ${Math.max(0, output.elapsedMs / 1000).toFixed(2)}s` : void 0;",
+    "  const timeoutMs = typeof payload.timeoutMs === \"number\" ? payload.timeoutMs : 10000;",
+    "  const timeout = `Timeout: ${Math.max(0.001, timeoutMs / 1000).toFixed(timeoutMs % 1000 === 0 ? 0 : 2)}s`;",
+    "  const footer = `⟦${[elapsed, timeout].filter(Boolean).join(\" | \")}⟧`;",
+    "  return renderHarnessOutputBox(`$ ${cwd}${command}`, \"Output\", [...rows, footer]);",
+    "}",
+    "function formatHarnessSubagentFrame(part, status) {",
+    "  const input = \"input\" in part && typeof part.input === \"object\" && part.input !== null ? part.input : {};",
+    "  const role = typeof input.role === \"string\" ? input.role : \"research\";",
+    "  const goal = typeof input.taskGoal === \"string\" ? input.taskGoal : \"waiting for task\";",
+    "  const refs = Array.isArray(input.referenceFiles) ? `${input.referenceFiles.length} references` : \"search/read only\";",
+    "  return renderHarnessOutputBox(`◇ Subagent: ${role} ⟦${status}⟧`, \"Live status\", [`Running: ${sliceMiddle(goal, 48)}`, `Status: ${status}`, `Scope: ${refs}`]);",
+    "}",
+    "function formatHarnessSubagentResultFrame(payload, output) {",
+    "  const role = typeof payload.role === \"string\" ? payload.role : \"research\";",
+    "  const goal = typeof payload.taskGoal === \"string\" ? payload.taskGoal : \"subagent\";",
+    "  const summary = typeof payload.summary === \"string\" ? payload.summary : formatValue(payload);",
+    "  const elapsed = output && typeof output === \"object\" && typeof output.elapsedMs === \"number\" ? `Wall: ${Math.max(0, output.elapsedMs / 1000).toFixed(2)}s` : void 0;",
+    "  const rows = [`Goal: ${sliceMiddle(goal, 48)}`, ...summary.split(\"\\n\").filter((line) => line.length > 0).slice(0, 10)];",
+    "  if (elapsed !== void 0) rows.push(`⟦${elapsed}⟧`);",
+    "  return renderHarnessOutputBox(`◇ Subagent: ${role} ⟦done⟧`, \"Result\", rows);",
+    "}",
+    "function formatHarnessTodoFrame(payload) {",
+    "  const phases = Array.isArray(payload.phases) ? payload.phases : Array.isArray(payload.list) ? payload.list : [];",
+    "  if (phases.length === 0) {",
+    "    return renderHarnessOutputBox(\"☑ Todo\", \"Tasks\", harnessOutputRows(\"todo\", payload, payload));",
+    "  }",
+    "  const totals = todoTotals(phases);",
+    "  const rows = [];",
+    "  phases.slice(0, 6).forEach((phase, phaseIndex) => {",
+    "    const items = Array.isArray(phase.items) ? phase.items : Array.isArray(phase.tasks) ? phase.tasks : [];",
+    "    const phaseTotals = todoTotals([phase]);",
+    "    const roman = [\"I\", \"II\", \"III\", \"IV\", \"V\", \"VI\"][phaseIndex] || String(phaseIndex + 1);",
+    "    const name = typeof phase.phase === \"string\" ? phase.phase : typeof phase.name === \"string\" ? phase.name : typeof phase.title === \"string\" ? phase.title : `Phase ${phaseIndex + 1}`;",
+    "    rows.push(`${roman}. ${name}${items.length === 0 || phaseIndex >= 2 ? `  ${phaseTotals.done}/${phaseTotals.total}` : \"\"}`);",
+    "    items.slice(0, phaseIndex >= 2 ? 0 : 6).forEach((item, itemIndex) => {",
+    "      const done = item && typeof item === \"object\" ? item.done === true || item.status === \"done\" || item.completed === true : false;",
+    "      const text = typeof item === \"string\" ? item : typeof (item == null ? void 0 : item.task) === \"string\" ? item.task : typeof (item == null ? void 0 : item.text) === \"string\" ? item.text : typeof (item == null ? void 0 : item.title) === \"string\" ? item.title : \"task\";",
+    "      const branch = itemIndex === items.length - 1 ? \"└─\" : \"├─\";",
+    "      rows.push(`  ${branch} ${done ? \"☑\" : \"☐\"} ${text}`);",
+    "    });",
+    "  });",
+    "  return renderHarnessTodoBox(`☑ Todo ${totals.total} tasks`, rows);",
+    "}",
+    "function todoTotals(phases) {",
+    "  let done = 0;",
+    "  let total = 0;",
+    "  for (const phase of phases) {",
+    "    const items = Array.isArray(phase.items) ? phase.items : Array.isArray(phase.tasks) ? phase.tasks : [];",
+    "    for (const item of items) {",
+    "      total += 1;",
+    "      if (item && typeof item === \"object\" && (item.done === true || item.status === \"done\" || item.completed === true)) done += 1;",
+    "    }",
+    "  }",
+    "  return { done, total };",
+    "}",
+    "function renderHarnessOutputBox(command, label, rows) {",
+    "  const width = 61;",
+    "  const inner = width - 2;",
+    "  const body = rows.length === 0 ? [\"(no output)\"] : rows.slice(0, 20);",
+    "  return [`╭${\"─\".repeat(inner)}╮`, harnessBoxLine(command, inner), harnessSeparator(label, inner), ...body.map((row) => harnessBoxLine(row, inner)), `╰${\"─\".repeat(inner)}╯`].join(\"\\n\");",
+    "}",
+    "function renderHarnessTodoBox(title, rows) {",
+    "  const width = 61;",
+    "  const inner = width - 2;",
+    "  const titleText = `─── ${title} `;",
+    "  const top = `${titleText}${\"─\".repeat(Math.max(0, inner - visibleLength(titleText)))}╮`;",
+    "  return [top, ...rows.slice(0, 20).map((row) => harnessBoxLine(row, inner)), `╰${\"─\".repeat(inner)}╯`].join(\"\\n\");",
+    "}",
+    "function harnessSeparator(label, width) {",
+    "  const title = `─── ${label} `;",
+    "  return `├${title}${\"─\".repeat(Math.max(0, width - visibleLength(title)))}┤`;",
+    "}",
+    "function harnessBoxLine(text, width) {",
+    "  const visible = sliceVisible(String(text), width);",
+    "  const padding = \" \".repeat(Math.max(0, width - visibleLength(visible)));",
+    "  return `│${visible}${padding}│`;",
     "}",
     "function harnessToolMeta(toolName) {",
     "  switch (toolName) {",
@@ -333,6 +499,7 @@ function harnessToolOutputHelpers(): string {
     "    case \"bash\": return { icon: \"▶\", label: \"Bash\", badge: \"🟪\" };",
     "    case \"write\":",
     "    case \"update\": return { icon: \"✎\", label: \"Edit\", badge: \"🟦\" };",
+    "    case \"todo\": return { icon: \"☑\", label: \"Todo\", badge: \"🟩\" };",
     "    case \"subagent\": return { icon: \"◇\", label: \"Agent\", badge: \"🟩\" };",
     "    default: return { icon: \"◆\", label: toolName, badge: \"⬜\" };",
     "  }",
@@ -359,15 +526,12 @@ function harnessToolOutputHelpers(): string {
     "  return \"done\";",
     "}",
     "function harnessInputRows(input) {",
-    "  if (input === void 0) return [\"   …│input streaming\"];",
+    "  if (input === void 0) return [\"input streaming\"];",
     "  return formatValue(input).split(\"\\n\").slice(0, 6).map((line, index) => `${String(index + 1).padStart(4)}│${sliceVisible(line, 72)}`);",
     "}",
     "function harnessOutputRows(toolName, payload, rawOutput) {",
     "  if (toolName === \"search\" && payload && Array.isArray(payload.matches)) {",
     "    return payload.matches.slice(0, 6).map((match) => `${String(match.line || \"?\").padStart(4)}│${sliceVisible(`${match.path || \"\"}: ${match.text || \"\"}`, 72)}`);",
-    "  }",
-    "  if (toolName === \"bash\" && payload && typeof payload.stdout === \"string\" && payload.stdout.length > 0) {",
-    "    return payload.stdout.split(\"\\n\").slice(0, 6).map((line, index) => `${String(index + 1).padStart(4)}│${sliceVisible(line, 72)}`);",
     "  }",
     "  return formatValue(payload == null ? rawOutput : payload).split(\"\\n\").slice(0, 6).map((line, index) => `${String(index + 1).padStart(4)}│${sliceVisible(line, 72)}`);",
     "}",
@@ -379,17 +543,17 @@ function harnessToolOutputHelpers(): string {
     "      continue;",
     "    }",
     "    if (line.startsWith(\"-\")) {",
-    "      rows.push(`│${`-${oldLine}`.padStart(4)}│${sliceVisible(line.slice(1), 72)}`);",
+    "      rows.push(`${`-${oldLine}`.padStart(4)}│${sliceVisible(line.slice(1), 72)}`);",
     "      oldLine += 1;",
     "    } else if (line.startsWith(\"+\")) {",
-    "      rows.push(`│${\"+\".padStart(4)}│${sliceVisible(line.slice(1), 72)}`);",
+    "      rows.push(`${\"+\".padStart(4)}│${sliceVisible(line.slice(1), 72)}`);",
     "    }",
     "    if (rows.length >= 18) {",
-    "      rows.push(\"│   …│diff preview truncated\");",
+    "      rows.push(\"   …│diff preview truncated\");",
     "      break;",
     "    }",
     "  }",
-    "  return rows.length === 0 ? [\"│   =│no textual changes\"] : rows;",
+    "  return rows.length === 0 ? [\"   =│no textual changes\"] : rows;",
     "}",
     "function countHarnessDiff(diff) {",
     "  let added = 0;",

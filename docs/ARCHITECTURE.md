@@ -83,7 +83,7 @@ Tools should throw `ToolError` for expected user/model recoverable failures and 
 | `update` | `src/tools/update-tool.ts` | Applies non-overlapping line replacements only when file hash and per-range hashes still match. |
 | `bash` | `src/tools/bash-tool.ts` | Runs one focused non-interactive shell command in the workspace. Non-zero exits are normal results; spawn failures and timeouts are tool errors. |
 
-All tool cards use one compact visual grammar in the TUI: `Icon Action: badge target ⟦status/count⟧ ╮` plus bounded preview rows. `write` and `update` specialize that frame as `✎ Edit: 🟦 path ⟦+N/-M⟧` with a line diff so users can scan edits without reading raw JSON.
+All tool and reasoning cards use the referenced boxed TUI grammar: command/status row, labeled separator (`├─── Output ─` / `Diff` / `Live status` / `Reasoning`), bounded rows, and footer metrics such as `⟦Wall: 3.11s | Timeout: 120s⟧`. `write` and `update` specialize the box with a line diff, `todo` renders phase trees, `subagent` renders live role/goal/status cards before the final summary, and streamed reasoning renders as `Think · live` with a live reasoning footer.
 
 The public promise is exactly these five workspace tools. The `subagent` adapter is an AI-loop helper for read-only research; it is not part of the workspace tool surface.
 
@@ -119,7 +119,7 @@ This keeps command parsing independent from model/tool behavior.
 1. `runOpenAICompatibleAiTui` calls `maybeRunProviderSetup`.
 2. Provider setup resolves model, endpoint, key, approval mode, and optional markdown instruction files.
 3. `patchAiSdkTuiRenderer` patches upstream `@ai-sdk/tui` before importing it. The dynamic import is required because the patch edits the installed dependency before module evaluation.
-4. The renderer patch changes message labels, viewport chrome, progress footer, scroll bar, code fences, and tool output. Every tool call renders through one OMP-style rounded action frame; edit tools use `╭─ ✎ Edit: 🟦 path ─ ⟦+N/-M⟧` plus a bounded line diff.
+4. The renderer patch changes message labels, viewport chrome, progress footer, scroll bar, code fences, tool output, and streamed reasoning. Every tool call renders through the referenced rounded output box; edit tools use a `Diff` separator, bash shows command/output/wall/timeout, todo shows phase trees, subagent shows live role/goal/status updates, and reasoning uses the same box grammar with `Think · live` status.
 5. `createSlashCommandAgent` wraps the shared coding agent with local slash-command handling.
 6. `runFullscreen` enters alternate screen mode.
 7. `runAgentTUI` renders messages, tool cards, reasoning, progress, approvals, and response statistics.

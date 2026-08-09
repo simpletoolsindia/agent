@@ -25,6 +25,7 @@ export type BashOutput = {
   readonly stdoutBytes: number;
   readonly stderrBytes: number;
   readonly truncated: boolean;
+  readonly timeoutMs: number;
 };
 
 export class BashTool implements Tool<BashInput, BashOutput> {
@@ -94,6 +95,7 @@ export class BashTool implements Tool<BashInput, BashOutput> {
       stdoutBytes: stdout.originalBytes,
       stderrBytes: stderr.originalBytes,
       truncated,
+      timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     };
   }
 

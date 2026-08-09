@@ -188,9 +188,10 @@ async function main(): Promise<void> {
   }, context);
   results.push(record("bash runs shell command", "success", bashRun));
   results.push(recordCheck(
-    "bash output shows running command",
+    "bash output shows running command and timeout",
     mustOutput(bashRun).command.includes("console.log")
-      && mustOutput(bashRun).statusLine.includes("running:"),
+      && mustOutput(bashRun).statusLine.includes("running:")
+      && mustOutput(bashRun).timeoutMs === 10000,
   ));
 
   results.push(recordFailureCode("read missing path is actionable", "PATH_NOT_FOUND", await registry.run("read", {
@@ -401,14 +402,19 @@ async function main(): Promise<void> {
   await patchAiSdkTuiRenderer();
   const patchedTuiSource = await readFile("node_modules/@ai-sdk/tui/dist/index.js", "utf8");
   results.push(recordCheck(
-    "TUI all tool outputs use modern action frames",
-    patchedTuiSource.includes("rich tui patch v7")
-      && patchedTuiSource.includes("formatHarnessCardTitle")
-      && patchedTuiSource.includes("╭─ ${icon} ${label}:")
-      && patchedTuiSource.includes("✎\", \"Edit\", \"🟦")
-      && patchedTuiSource.includes("◉\", label: \"Read")
-      && patchedTuiSource.includes("⌕\", label: \"Search")
-      && patchedTuiSource.includes("▶\", label: \"Bash"),
+    "TUI tool and reasoning outputs use referenced box frames",
+    patchedTuiSource.includes("rich tui patch v9")
+      && patchedTuiSource.includes("renderHarnessOutputBox")
+      && patchedTuiSource.includes("harnessSeparator")
+      && patchedTuiSource.includes("formatHarnessBashFrame")
+      && patchedTuiSource.includes("Timeout:")
+      && patchedTuiSource.includes("formatHarnessTodoFrame")
+      && patchedTuiSource.includes("formatHarnessSubagentFrame")
+      && patchedTuiSource.includes("Live status")
+      && patchedTuiSource.includes("formatHarnessReasoningFrame")
+      && patchedTuiSource.includes("Think · live")
+      && patchedTuiSource.includes("live reasoning stream")
+      && (patchedTuiSource.match(/const harnessFrame = formatHarnessToolFrame\(toolName, inputText, part, status\)/g) ?? []).length === 1,
   ));
 
   const progressParts = await collectInlineProgressText();
