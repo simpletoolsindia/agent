@@ -379,7 +379,7 @@ async function main(): Promise<void> {
   ));
 
   const setupScreen = renderProviderSetupScreen({
-    activeField: 3,
+    activeField: 1,
     values: {
       model: "qwen2.5-coder:7b",
       baseURL: "http://localhost:11434/v1",
@@ -399,11 +399,13 @@ async function main(): Promise<void> {
       && plainSetupScreen.includes("Profile cards")
       && plainSetupScreen.includes("Workspace context")
       && plainSetupScreen.includes("Command deck")
+      && plainSetupScreen.includes("Ctrl+X ctx size")
+      && plainSetupScreen.includes("▾ auto / 32k / 64k / 125k")
       && plainSetupScreen.includes("Ctrl+A"),
   ));
 
   const animatedSetupScreen = renderProviderSetupScreen({
-    activeField: 3,
+    activeField: 1,
     values: {
       model: "qwen2.5-coder:7b",
       baseURL: "http://localhost:11434/v1",
@@ -448,6 +450,24 @@ async function main(): Promise<void> {
   results.push(recordCheck(
     "provider setup dropdown toggles auto approval",
     dropdownApprovalSetup.type === "state" && dropdownApprovalSetup.state.values.approvalMode === "auto" && dropdownScreen.includes("▾ safe / auto"),
+  ));
+
+  const contextShortcutSetup = reduceProviderSetupInput({
+    activeField: 0,
+    values: {
+      model: "gpt-4o-mini",
+      contextSize: "",
+      baseURL: "",
+      apiKey: "",
+      approvalMode: "safe",
+      agentMdPath: "",
+      skillsMdPath: "",
+    },
+    message: "Ready",
+  }, "\u0018");
+  results.push(recordCheck(
+    "provider setup shortcut updates context size",
+    contextShortcutSetup.type === "state" && contextShortcutSetup.state.values.contextSize === "32768",
   ));
 
   const statusBar = renderStatusBar("Processing", "Waiting for model response or tool stream", 48, "busy");

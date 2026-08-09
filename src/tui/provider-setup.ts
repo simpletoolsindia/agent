@@ -14,6 +14,7 @@ const GREEN = `${ESC}[32m`;
 const YELLOW = `${ESC}[33m`;
 const BLUE = `${ESC}[34m`;
 const ACCENT_BLUE = `${ESC}[94m`;
+const CONTEXT_SIZE_PRESETS = ["", "32768", "65536", "128000"] as const;
 
 const FIELDS = ["model", "contextSize", "baseURL", "apiKey", "approvalMode", "agentMdPath", "skillsMdPath"] as const;
 const FIELD_LABELS: Record<ProviderSetupField, string> = {
@@ -227,6 +228,17 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
       },
     };
   }
+  if (key === "\u0018") {
+    const nextContextSize = nextContextSizePreset(state.values.contextSize);
+    return {
+      type: "state",
+      state: {
+        ...state,
+        values: { ...state.values, contextSize: nextContextSize },
+        message: nextContextSize.length === 0 ? "Context tokens set to auto-detect." : `Context tokens set to ${Number(nextContextSize).toLocaleString()}.`,
+      },
+    };
+  }
   if (key === "\u0015") {
     const field = FIELDS[state.activeField];
     return {
@@ -238,7 +250,19 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
       },
     };
   }
-  if (FIELDS[state.activeField] === "approvalMode" && (key === " " || key === "\x1B[C" || key === "\x1B[D")) {
+  if ((FIELDS[state.activeField] === "approvalMode" || FIELDS[state.activeField] === "contextSize") && (key === " " || key === "\x1B[C" || key === "\x1B[D")) {
+    const field = FIELDS[state.activeField];
+    if (field === "contextSize") {
+      const nextContextSize = nextContextSizePreset(state.values.contextSize);
+      return {
+        type: "state",
+        state: {
+          ...state,
+          values: { ...state.values, contextSize: nextContextSize },
+          message: nextContextSize.length === 0 ? "Context tokens set to auto-detect." : `Context tokens set to ${Number(nextContextSize).toLocaleString()}.`,
+        },
+      };
+    }
     const nextApproval = normalizedApprovalMode(state.values.approvalMode, "safe") === "auto" ? "safe" : "auto";
     return {
       type: "state",
@@ -289,6 +313,10 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
         ? { type: "state", state: { ...state, message: "Use Space/←/→ to choose safe or auto." } }
         : { type: "state", state: { ...state, values: { ...state.values, approvalMode: nextApproval }, message: `Approval mode set to ${nextApproval}.` } };
     }
+    if (field === "contextSize" && key === " ") {
+      const nextContextSize = nextContextSizePreset(state.values.contextSize);
+      return { type: "state", state: { ...state, values: { ...state.values, contextSize: nextContextSize }, message: nextContextSize.length === 0 ? "Context tokens set to auto-detect." : `Context tokens set to ${Number(nextContextSize).toLocaleString()}.` } };
+    }
     return {
       type: "state",
       state: {
@@ -329,9 +357,10 @@ export function renderProviderSetupScreen(state: ProviderSetupState, width: numb
     framedLine("", contentWidth),
     renderSectionTitle("Command deck", contentWidth),
     framedLine(renderShortcutRow(["Tab/↓ next", "↑ previous", "Enter next/start", "Ctrl+S start"], contentWidth), contentWidth),
-    framedLine(renderShortcutRow(["Ctrl+O Ollama", "Ctrl+A auto approval", "Ctrl+D OpenAI", "Ctrl+U clear", "Esc cancel"], contentWidth), contentWidth),
+    framedLine(renderShortcutRow(["Ctrl+O Ollama", "Ctrl+X ctx size", "Ctrl+A approval", "Ctrl+D OpenAI", "Ctrl+U clear"], contentWidth), contentWidth),
+    framedLine(renderShortcutRow(["Space/←/→ dropdown", "Esc cancel"], contentWidth), contentWidth),
     framedLine("", contentWidth),
-    framedLine(renderStatusBar("Status", state.message ?? "Ready. Use Ctrl+O for Ollama or Ctrl+A for auto approval.", contentWidth, state.message === undefined ? "idle" : "busy", (state.activeField + 1) / FIELDS.length), contentWidth),
+    framedLine(renderStatusBar("Status", state.message ?? "Ready. Use Ctrl+X for context size or Space on dropdown fields.", contentWidth, state.message === undefined ? "idle" : "busy", (state.activeField + 1) / FIELDS.length), contentWidth),
     bottomBorder(safeWidth),
   ];
   return rows.join("\n");
@@ -385,7 +414,28 @@ function visibleFieldValue(field: ProviderSetupField, rawValue: string, active: 
     const auto = current === "auto" ? `${BOLD}auto${RESET}` : "auto";
     return active ? `▾ ${safe} / ${auto}` : current;
   }
+  if (field === "contextSize") {
+    return active ? renderContextSizeChoices(rawValue) : rawValue;
+  }
   return rawValue;
+}
+
+function renderContextSizeChoices(rawValue: string): string {
+  const normalized = normalizedPositiveInteger(rawValue, undefined)?.toString() ?? "";
+  const current = CONTEXT_SIZE_PRESETS.some((value) => value === normalized) ? normalized : rawValue.trim();
+  const choices = CONTEXT_SIZE_PRESETS.map((value) => {
+    const label = value.length === 0 ? "auto" : `${Math.round(Number(value) / 1024)}k`;
+    return value === current ? `${BOLD}${label}${RESET}` : label;
+  }).join(" / ");
+  return current.length > 0 && !CONTEXT_SIZE_PRESETS.some((value) => value === current)
+    ? `▾ custom ${current} / ${choices}`
+    : `▾ ${choices}`;
+}
+
+function nextContextSizePreset(current: string): string {
+  const normalized = normalizedPositiveInteger(current, undefined)?.toString() ?? "";
+  const currentIndex = CONTEXT_SIZE_PRESETS.findIndex((value) => value === normalized);
+  return CONTEXT_SIZE_PRESETS[(currentIndex + 1) % CONTEXT_SIZE_PRESETS.length] ?? "";
 }
 
 function toProviderSetupValues(values: MutableProviderSetupValues): ProviderSetupValues {
