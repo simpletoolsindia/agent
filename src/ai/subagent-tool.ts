@@ -102,8 +102,8 @@ export function createSubagentTool(
       const started = performance.now();
       const parsed = input as SubagentInput;
       const role = parsed.role ?? "research";
-
       try {
+        executionOptions.abortSignal?.throwIfAborted();
         const result = await new ToolLoopAgent({
           model: createOpenAICompatibleChatModel(options),
           instructions: subagentInstructions(role),
@@ -131,10 +131,11 @@ export function createSubagentTool(
           elapsedMs: performance.now() - started,
         };
       } catch (error) {
+        const aborted = executionOptions.abortSignal?.aborted === true || isAbortError(error);
         return {
           ok: false,
-          error: error instanceof Error ? error.message : String(error),
-          code: "SUBAGENT_FAILED",
+          error: aborted ? "Subagent stopped by user" : error instanceof Error ? error.message : String(error),
+          code: aborted ? "SUBAGENT_ABORTED" : "SUBAGENT_FAILED",
           elapsedMs: performance.now() - started,
         };
       }
@@ -211,6 +212,10 @@ function compactSubagentSummary(text: string): { readonly text: string; readonly
     text: `${joined.slice(0, MAX_SUBAGENT_SUMMARY_CHARS).trimEnd()}\n\n[Subagent summary truncated to ${MAX_SUBAGENT_SUMMARY_CHARS} characters.]`,
     truncated: true,
   };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "AbortError" || error.message.toLowerCase().includes("abort") || error.message.toLowerCase().includes("interrupt"));
 }
 
 function subagentInstructions(role: SubagentOutput["role"]): string {

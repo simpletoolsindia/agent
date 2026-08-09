@@ -429,10 +429,11 @@ CLI and TUI use the same `ToolLoopAgent` setup:
 
 - stable tool order: `subagent`, `search`, `read`, `update`, `write`, `bash`
 - step logs with finish reason, tool names, token usage, and elapsed time
-- targeted recovery hints after failed tool results
-- automatic context compaction for long sessions
+- targeted recovery hints after failed tool results; hints are written for small models as `location`, `code`, `observed`, and `next` action so a failure becomes the next step instead of breaking the loop
+- automatic context compaction for long sessions; compaction failure is logged and ignored so the agent keeps running with the un-compacted history
 - read-only subagent delegation for broad research, review, and non-mutating plans; only `taskGoal` is required, with optional reference files when known
 - subagent summaries are bounded handoffs (`<=80` lines / `<=5000` characters) so broad exploration does not fill the main agent context
+- while a subagent runs, the TUI shows role, goal, search/read scope, status, and `Stop: Esc or Ctrl+C`; a stopped subagent returns `SUBAGENT_ABORTED`, which the main loop treats as recoverable
 - high safety step limit for long tasks; the model is instructed not to final-answer while requested work remains
 - non-trivial tasks follow the main loop: analyze user input and project, create a sequential todo list, delegate the next context-heavy task, validate the subagent handoff, edit or re-delegate when the handoff is wrong, verify the task, mark todo state, and continue
 - each delegated task carries goal, current folder path, reference files, implementation steps, validation expectations, expected outcome, and clean-code/SOLID constraints

@@ -494,7 +494,7 @@ function agentsHelpText(): string {
       "`review` checks a proposed change or subagent handoff for regressions and missing verification.",
       "`plan` creates a non-mutating implementation plan for larger work.",
       "Loop: analyze user task -> create todos -> delegate one context-heavy task -> validate handoff -> edit or re-delegate.",
-      "Main agent keeps edits, verification, and final todo state so context stays clean.",
+      "Main agent keeps edits, verification, final todo state, and subagent stop recovery so context stays clean.",
     ], 78),
     "",
     "| Role | Use when | Tools | Required input |",
@@ -509,7 +509,7 @@ function agentsHelpText(): string {
     "{ \"role\": \"research\", \"taskGoal\": \"Map TUI startup flow\", \"referenceFiles\": [{ \"path\": \"src/tui/ai-tui.ts\", \"reason\": \"TUI startup pattern\" }] }",
     "```",
     "",
-    "Edits still happen in the main agent with normal `update`/`write` approval; subagent output is a compact handoff, not trusted until the main agent validates it.",
+    "Edits still happen in the main agent with normal `update`/`write` approval; subagent output is a compact handoff, not trusted until the main agent validates it. Press `Esc` or `Ctrl+C` to stop a running subagent; the loop receives `SUBAGENT_ABORTED` and can continue or re-delegate narrowly.",
   ].join("\n");
 }
 
@@ -906,7 +906,7 @@ function toolRunMessage(toolName: string, record: Record<string, unknown>): stri
   }
   if (toolName === "subagent") {
     const goal = input === undefined ? undefined : readString(input, "taskGoal");
-    return goal === undefined ? "subagent running." : `subagent running: ${goal}`;
+    return goal === undefined ? "subagent running · Esc/Ctrl+C stops it." : `subagent running: ${goal} · Esc/Ctrl+C stops it.`;
   }
   return `${toolName} running. ${toolSuggestion(toolName)}`;
 }

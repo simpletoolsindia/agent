@@ -256,6 +256,8 @@ async function main(): Promise<void> {
       && instructions.includes("Keep the main context small")
       && instructions.includes("Subagent loop for non-trivial tasks")
       && instructions.includes("re-delegate if the handoff is wrong")
+      && instructions.includes("For small models, recovery must be explicit")
+      && instructions.includes("SUBAGENT_ABORTED")
       && instructions.includes("Do not run git commands")
       && instructions.includes("parallel")
       && instructions.includes("Clean-code target")
@@ -268,6 +270,17 @@ async function main(): Promise<void> {
       && subagentSource.includes("MAX_SUBAGENT_SUMMARY_LINES = 80")
       && subagentSource.includes("compactSubagentSummary")
       && subagentSource.includes("main agent keeps a small working context"),
+  ));
+
+  const codingAgentSource = await readFile("src/ai/coding-agent.ts", "utf8");
+  results.push(recordCheck(
+    "failure hints keep small model loop recoverable",
+    codingAgentSource.includes("Failure recovery protocol for small models")
+      && codingAgentSource.includes("location=")
+      && codingAgentSource.includes("observed=")
+      && codingAgentSource.includes("next=")
+      && codingAgentSource.includes("agent.compaction.failed")
+      && codingAgentSource.includes("SUBAGENT_ABORTED"),
   ));
 
   const contextInstructions = createCodingInstructions(workspace, loadInstructionDocuments(workspace, {
@@ -414,7 +427,7 @@ async function main(): Promise<void> {
   const patchedTuiSource = await readFile("node_modules/@ai-sdk/tui/dist/index.js", "utf8");
   results.push(recordCheck(
     "TUI tool and reasoning outputs use referenced box frames",
-    patchedTuiSource.includes("rich tui patch v10")
+    patchedTuiSource.includes("rich tui patch v11")
       && patchedTuiSource.includes("renderHarnessOutputBox")
       && patchedTuiSource.includes("harnessSeparator")
       && patchedTuiSource.includes("formatHarnessBashFrame")
@@ -422,6 +435,7 @@ async function main(): Promise<void> {
       && patchedTuiSource.includes("formatHarnessTodoFrame")
       && patchedTuiSource.includes("formatHarnessSubagentFrame")
       && patchedTuiSource.includes("Live status")
+      && patchedTuiSource.includes("Stop: Esc or Ctrl+C")
       && patchedTuiSource.includes("summary compacted for main context")
       && patchedTuiSource.includes("formatHarnessReasoningFrame")
       && patchedTuiSource.includes("Think · live")

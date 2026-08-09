@@ -138,19 +138,23 @@ This keeps command parsing independent from model/tool behavior.
 
 ## Subagent orchestration
 
-The subagent is a context offload, not an autonomous committer. The main agent owns task analysis, todo state, edits, validation, and the final user summary. A delegated task carries a concrete goal, current folder, known references, implementation/validation expectations, expected outcome, and clean-code/SOLID constraints. The subagent returns exact paths, symbols, evidence, risks, and next action in a bounded handoff. The main agent must validate that handoff against observed code and focused verification; if it is incomplete or stale, the main agent either asks a narrower subagent follow-up or fixes the issue directly before starting the next task.
+The subagent is a context offload, not an autonomous committer. The main agent owns task analysis, todo state, edits, validation, and the final user summary. A delegated task carries a concrete goal, current folder, known references, implementation/validation expectations, expected outcome, and clean-code/SOLID constraints. The subagent returns exact paths, symbols, evidence, risks, and next action in a bounded handoff. While it runs, the TUI exposes role, goal, search/read scope, status, and `Stop: Esc or Ctrl+C`; stopping returns `SUBAGENT_ABORTED`. The main agent must validate every handoff against observed code and focused verification; if it is incomplete, stale, failed, or aborted, the main agent either asks a narrower subagent follow-up or fixes the issue directly before starting the next task.
 
 ## Error and recovery flow
 
 Recoverable tool failures use stable error codes, for example:
 
+- `SCHEMA_INVALID` - fix required fields/types before retrying.
 - `PATH_NOT_FOUND` - list/search parent before reading.
+- `PATH_ESCAPE` - stay inside the workspace root.
+- `WRITE_EXISTS` - use `update`, or explicit overwrite for intentional replacement.
 - `READ_RANGE_INVALID` - re-read with valid line bounds.
 - `UPDATE_STALE_FILE` - file changed since read; re-read before updating.
 - `UPDATE_RANGE_CHANGED` - selected lines changed; re-read target range.
 - `BASH_TIMEOUT` - narrow the command or increase timeout.
+- `SUBAGENT_FAILED` / `SUBAGENT_ABORTED` - continue with current evidence or re-delegate a narrower read-only task.
 
-`coding-agent.ts` converts recent failure codes into model-facing recovery hints. Do not hide or collapse these codes; they are part of the agent's self-repair loop.
+`ToolRegistry` catches tool exceptions and returns serializable `ToolResult` failures. `coding-agent.ts` converts recent failures into model-facing recovery hints with `location`, `code`, `observed`, and `next` fields. This shape is intentional for small LLMs: it separates failure location, observed value, and admissible next action so the next model step can repair instead of ending the loop. Context compaction is also fail-open: if pruning throws, the agent logs `agent.compaction.failed` and continues with the original messages.
 
 ## SOLID boundaries
 

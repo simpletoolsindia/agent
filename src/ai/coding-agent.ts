@@ -61,14 +61,7 @@ export function createOpenAICompatibleCodingAgent(options: OpenAICompatibleCodin
     stopWhen: isStepCount(LOOP_STEP_LIMIT),
     prepareStep: ({ stepNumber, steps, messages }) => {
       const failureHint = formatFailureHint(steps);
-      const compactedMessages = shouldCompact(messages, contextSize)
-        ? pruneMessages({
-          messages,
-          reasoning: "all",
-          toolCalls: `before-last-${RECENT_TOOL_MESSAGES_TO_KEEP}-messages`,
-          emptyMessages: "remove",
-        })
-        : undefined;
+      const compactedMessages = safeCompactedMessages(messages, contextSize, logger);
 
       return {
         toolOrder: [...TOOL_ORDER],
@@ -91,6 +84,26 @@ export function createOpenAICompatibleCodingAgent(options: OpenAICompatibleCodin
   return { agent, approvalMode };
 }
 
+
+function safeCompactedMessages(messages: ModelMessage[], contextSize: number, logger: Logger): ModelMessage[] | undefined {
+  if (!shouldCompact(messages, contextSize)) {
+    return undefined;
+  }
+
+  try {
+    return pruneMessages({
+      messages,
+      reasoning: "all",
+      toolCalls: `before-last-${RECENT_TOOL_MESSAGES_TO_KEEP}-messages`,
+      emptyMessages: "remove",
+    });
+  } catch (error) {
+    logger.warn("agent.compaction.failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+}
 function shouldCompact(messages: readonly ModelMessage[], contextSize: number): boolean {
   return estimateTokens(messages) > contextSize * COMPACTION_RATIO;
 }
@@ -99,6 +112,12 @@ function estimateTokens(messages: readonly ModelMessage[]): number {
   return Math.ceil(JSON.stringify(messages).length / 4);
 }
 
+type ToolFailure = {
+  readonly toolName: string;
+  readonly code: string;
+  readonly error: string;
+};
+
 function formatFailureHint(steps: readonly unknown[]): string | undefined {
   const failures = latestToolFailures(steps);
   if (failures.length === 0) {
@@ -106,15 +125,18 @@ function formatFailureHint(steps: readonly unknown[]): string | undefined {
   }
 
   return [
-    "The previous tool call failed. Do not retry the same input unchanged.",
-    ...failures.map((failure) => recoveryHint(failure)),
+    "Failure recovery protocol for small models:",
+    "1. Tool ok=false is normal feedback, not a reason to stop.",
+    "2. Do not repeat the same call unchanged.",
+    "3. Use the next action below, then continue the task loop and update todo only after verification.",
+    ...failures.slice(0, 3).map(formatFailureRecovery),
   ].join("\n");
 }
 
-function latestToolFailures(steps: readonly unknown[]): Array<{ readonly toolName: string; readonly code: string; readonly error: string }> {
+function latestToolFailures(steps: readonly unknown[]): ToolFailure[] {
   const lastStep = steps.at(-1) as { readonly toolResults?: readonly unknown[] } | undefined;
   const results = lastStep?.toolResults ?? [];
-  const failures: Array<{ readonly toolName: string; readonly code: string; readonly error: string }> = [];
+  const failures: ToolFailure[] = [];
 
   for (const result of results) {
     const toolName = readStringProperty(result, "toolName") ?? "tool";
@@ -133,22 +155,43 @@ function latestToolFailures(steps: readonly unknown[]): Array<{ readonly toolNam
   return failures;
 }
 
-function recoveryHint(failure: { readonly toolName: string; readonly code: string; readonly error: string }): string {
+function formatFailureRecovery(failure: ToolFailure): string {
+  return [
+    `- location=${failure.toolName}`,
+    `code=${failure.code}`,
+    `observed=${failure.error}`,
+    `next=${recoveryAction(failure)}`,
+  ].join(" | ");
+}
+
+function recoveryAction(failure: ToolFailure): string {
   switch (failure.code) {
+    case "SCHEMA_INVALID":
+      return "Fix the tool input shape from the schema; include required fields and valid types.";
     case "PATH_NOT_FOUND":
-      return `For ${failure.toolName}: ${failure.error}. Search or list the parent directory before reading.`;
+      return "Search or list the parent directory, then retry with a discovered path.";
+    case "PATH_ESCAPE":
+      return "Stay inside the workspace; use a relative workspace path.";
+    case "WRITE_EXISTS":
+      return "Use update for existing files, or write with overwrite=true only for intentional full replacement.";
     case "READ_RANGE_INVALID":
     case "UPDATE_RANGE_INVALID":
-      return `For ${failure.toolName}: ${failure.error}. Re-read the file slice and use valid current line numbers.`;
+      return "Re-read the file slice and use valid current line numbers.";
     case "UPDATE_STALE_FILE":
     case "UPDATE_RANGE_CHANGED":
-      return `For ${failure.toolName}: ${failure.error}. Re-read the target range and retry with fresh hashes.`;
+      return "Re-read the target range and retry with fresh fileHash and rangeHash.";
     case "BASH_SPAWN_FAILED":
-      return `For bash: ${failure.error}. Use a normal shell command string such as "npm run build" from the right cwd.`;
+      return "Use a normal shell command string from the correct cwd, for example npm run build.";
     case "BASH_TIMEOUT":
-      return `For bash: ${failure.error}. Use a narrower command or increase timeoutMs if necessary.`;
+      return "Narrow the command or raise timeoutMs only when the command is expected to run longer.";
+    case "SUBAGENT_ABORTED":
+      return "User stopped the subagent; continue with current evidence or create a narrower subagent task if still needed.";
+    case "SUBAGENT_FAILED":
+      return "Create a narrower read-only subagent task with explicit references, or inspect the key file directly.";
+    case "TOOL_NOT_FOUND":
+      return "Choose one available tool: subagent, search, read, update, write, or bash.";
     default:
-      return `For ${failure.toolName}: ${failure.code}: ${failure.error}. Change strategy before retrying.`;
+      return "Change strategy before retrying; collect missing context or choose a safer tool.";
   }
 }
 

@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v10 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v11 */";
 
 /**
  * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
@@ -425,7 +425,7 @@ function harnessToolOutputHelpers(): string {
     "  const role = typeof input.role === \"string\" ? input.role : \"research\";",
     "  const goal = typeof input.taskGoal === \"string\" ? input.taskGoal : \"waiting for task\";",
     "  const refs = Array.isArray(input.referenceFiles) ? `${input.referenceFiles.length} references` : \"search/read only\";",
-    "  return renderHarnessOutputBox(`◇ Subagent: ${role} ⟦${status}⟧`, \"Live status\", [`Running: ${sliceMiddle(goal, 48)}`, `Status: ${status}`, `Scope: ${refs}`]);",
+    "  return renderHarnessOutputBox(`◇ Subagent: ${role} ⟦${status}⟧`, \"Live status\", [`Running: ${sliceMiddle(goal, 48)}`, `Doing: ${role} via search/read`, `Status: ${status}`, `Scope: ${refs}`, \"Stop: Esc or Ctrl+C\"]);",
     "}",
     "function formatHarnessSubagentResultFrame(payload, output) {",
     "  const role = typeof payload.role === \"string\" ? payload.role : \"research\";",
