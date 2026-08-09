@@ -3,6 +3,8 @@ import { NodeFileStore } from "../core/file-store.js";
 import type { Tool, ToolContext } from "../core/tool.js";
 import { ToolError } from "../core/tool.js";
 import { shortHash } from "../core/hash.js";
+import { createChangeSummary, type ChangeSummary } from "./change-summary.js";
+import { validateLspAvailability, type LspValidation } from "./lsp-validator.js";
 
 export type WriteInput = {
   readonly path: string;
@@ -16,6 +18,8 @@ export type WriteOutput = {
   readonly fileHash: string;
   readonly displayHash: string;
   readonly bytes: number;
+  readonly change: ChangeSummary;
+  readonly lspValidation: LspValidation;
 };
 
 export class WriteTool implements Tool<WriteInput, WriteOutput> {
@@ -42,6 +46,7 @@ export class WriteTool implements Tool<WriteInput, WriteOutput> {
       throw new ToolError("Refusing to overwrite existing file without overwrite=true", "WRITE_EXISTS", { path: input.path });
     }
 
+    const previous = exists ? (await this.files.readText(absPath)).content : undefined;
     const durability = input.durability ?? "safe";
     const written = await this.files.writeTextAtomic(absPath, input.content, durability);
     context.logger.info("file.write", { path: input.path, bytes: Buffer.byteLength(input.content, "utf8"), durability });
@@ -51,6 +56,8 @@ export class WriteTool implements Tool<WriteInput, WriteOutput> {
       fileHash: written.hash,
       displayHash: shortHash(written.hash),
       bytes: Buffer.byteLength(input.content, "utf8"),
+      change: createChangeSummary(input.path, previous, input.content, exists ? "overwritten" : "created"),
+      lspValidation: await validateLspAvailability(input.path),
     };
   }
 }

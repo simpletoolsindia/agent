@@ -162,7 +162,7 @@ npm run tui -- \
   --ui-density compact
 ```
 
-The one-shot CLI shows a rich cockpit header on interactive terminals, then animates an in-place `AI running` status line with practical usage suggestions until the response is ready. The TUI opens a modern setup cockpit when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, approval mode, `agent.md`, and `skills.md` before the chat starts. The screen groups connection and workspace context fields, shows active profile chips, animates the active field marker, and keeps status/progress bounded so setup messages do not overlap narrow terminals. During model/tool work the TUI shows inline progress plus rotating usage suggestions such as when to use `search`, `read`, `update`, `write`, `bash`, `/settings`, and `/compact`. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
+The one-shot CLI shows a rich cockpit header on interactive terminals, then animates an in-place `AI running` status line with practical usage suggestions until the response is ready. The TUI opens a modern setup cockpit when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, approval mode, `agent.md`, and `skills.md` before the chat starts. The screen groups connection and workspace context fields, shows active profile chips, animates the active field marker, and keeps status/progress bounded so setup messages do not overlap narrow terminals. During model/tool work the TUI shows streamed reasoning, inline tool progress, `bash` command status, parallel tool counts, scroll hints, and rotating usage suggestions such as when to use `search`, `read`, `update`, `write`, `bash`, `/settings`, `/agents`, `/sessions`, and `/compact`. The title then shows the workspace, model, approval mode, context usage, and slash-command hints. `--context-size` defaults to `32768`.
 
 UI density presets:
 
@@ -191,6 +191,17 @@ Provider setup cockpit controls:
 | `Ctrl+D` | Use the default OpenAI endpoint by clearing server URL and API key. |
 | `Ctrl+U` | Clear the active field. |
 | Markdown fields | Optional workspace-relative paths for extra agent and skill instructions. |
+
+Resumable sessions:
+
+```bash
+npm run tui -- --resume               # resume the latest session for this workspace
+npm run tui -- --resume smoke-session # resume a specific saved session
+npm run tui -- --no-resume            # start clean
+npm run cli -- sessions               # list the five saved sessions
+```
+
+Saved TUI sessions keep the latest five local conversations in `~/.harness-tools/sessions.json`.
 
 Force the setup screen even when values are already supplied:
 
@@ -339,6 +350,9 @@ Options:
 --ui-density <mode>          UI preset: compact|normal|debug. Default: compact.
 --tool-display <mode>        Override tool cards: full|collapsed|auto-collapsed|hidden.
 --reasoning-display <mode>   Override reasoning: full|collapsed|auto-collapsed|hidden.
+--resume [id]                Resume the latest saved session or a specific session id.
+--no-resume                  Start without loading a saved session.
+--session-id <id>            Stable id to use when saving this TUI session.
 --setup                     Always open the rich provider setup UI before chat.
 --no-setup                  Skip the provider setup UI.
 -h, --help                   Show help.
@@ -352,6 +366,8 @@ Useful TUI slash commands:
 /settings auto              Turn on auto approval for tools that support it.
 /settings safe              Turn approval prompts back on.
 /settings model <id>        Switch model for future turns.
+/sessions                   List the five saved resumable sessions.
+/agents                     Show read-only subagent delegation modes.
 /compact                    Drop old slash chatter and tool-heavy history.
 ```
 
@@ -389,6 +405,8 @@ CLI and TUI use the same `ToolLoopAgent` setup:
 - subagent calls are encouraged for context-heavy steps, then the main agent inspects the result, validates the task, and continues
 - repository context comes from `search` and `read`; the agent is instructed not to run git commands just to provide context to the LLM
 - optional `--agent-md <path>` and `--skills-md <path>` append workspace markdown instructions to the agent prompt
+- independent `subagent`, `search`, `read`, and `bash` calls are issued in the same model step when possible so the AI SDK executes them in parallel; `write` and `update` stay serialized when they touch the same file
+- `write` and `update` return compact diff summaries plus best-effort LSP diagnostics for edited files
 
 `bash` accepts one shell command string and runs it in the selected workspace:
 

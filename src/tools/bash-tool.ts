@@ -16,6 +16,9 @@ export type BashInput = {
 };
 
 export type BashOutput = {
+  readonly command: string;
+  readonly cwd: string;
+  readonly statusLine: string;
   readonly exitCode: number;
   readonly stdout: string;
   readonly stderr: string;
@@ -82,6 +85,9 @@ export class BashTool implements Tool<BashInput, BashOutput> {
     });
 
     return {
+      command: input.command,
+      cwd: cwdInput,
+      statusLine: `running: ${input.command}`,
       exitCode,
       stdout: stdout.text,
       stderr: stderr.text,

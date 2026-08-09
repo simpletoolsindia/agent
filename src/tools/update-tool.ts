@@ -4,6 +4,8 @@ import type { Tool, ToolContext } from "../core/tool.js";
 import { ToolError } from "../core/tool.js";
 import { LineIndex } from "../core/line-index.js";
 import { shortHash } from "../core/hash.js";
+import { createChangeSummary, type ChangeSummary } from "./change-summary.js";
+import { validateLspAvailability, type LspValidation } from "./lsp-validator.js";
 
 export type ReplaceOperation = {
   readonly kind: "replace";
@@ -25,6 +27,8 @@ export type UpdateOutput = {
   readonly fileHash: string;
   readonly displayHash: string;
   readonly applied: number;
+  readonly change: ChangeSummary;
+  readonly lspValidation: LspValidation;
 };
 
 export class UpdateTool implements Tool<UpdateInput, UpdateOutput> {
@@ -87,6 +91,8 @@ export class UpdateTool implements Tool<UpdateInput, UpdateOutput> {
       fileHash: written.hash,
       displayHash: shortHash(written.hash),
       applied: input.operations.length,
+      change: createChangeSummary(input.path, current.content, next, "updated"),
+      lspValidation: await validateLspAvailability(input.path),
     };
   }
 

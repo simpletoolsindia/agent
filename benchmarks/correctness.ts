@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { createHarness, type ReadOutput, type SearchOutput, type BashOutput } from "../src/index.js";
+import { createHarness, type ReadOutput, type SearchOutput, type BashOutput, type WriteOutput, type UpdateOutput } from "../src/index.js";
 import { JsonConsoleLogger } from "../src/core/logger.js";
 import type { ToolResult } from "../src/core/registry.js";
 import { createSlashCommandAgent, pickRuntimeSuggestion, withInlineProgress } from "../src/tui/slash-agent.js";
@@ -65,10 +65,18 @@ async function main(): Promise<void> {
   const { registry, context } = harness;
   const results: CaseResult[] = [];
 
-  results.push(record("write creates file", "success", await registry.run("write", {
+  const createdWrite = await registry.run<WriteOutput>("write", {
     path: "src/example.ts",
     content: "export const value = 1;\n",
-  }, context)));
+  }, context);
+  results.push(record("write creates file", "success", createdWrite));
+  const createdWriteOutput = mustOutput(createdWrite);
+  results.push(recordCheck(
+    "write output includes diff and LSP status",
+    createdWriteOutput.change.diff.includes("+++ b/src/example.ts")
+      && createdWriteOutput.change.diff.includes("+export const value = 1;")
+      && createdWriteOutput.lspValidation.language === "typescript",
+  ));
 
   results.push(record("write rejects overwrite by default", "failure", await registry.run("write", {
     path: "src/example.ts",
@@ -83,7 +91,7 @@ async function main(): Promise<void> {
   results.push(record("read returns hash guarded slice", "success", read));
 
   const readOutput = mustOutput(read);
-  results.push(record("update accepts matching file and range hash", "success", await registry.run("update", {
+  const updatedWrite = await registry.run<UpdateOutput>("update", {
     path: "src/example.ts",
     fileHash: readOutput.fileHash,
     operations: [{
@@ -93,7 +101,13 @@ async function main(): Promise<void> {
       expectedHash: readOutput.rangeHash,
       content: "export const value = 3;\n",
     }],
-  }, context)));
+  }, context);
+  results.push(record("update accepts matching file and range hash", "success", updatedWrite));
+  results.push(recordCheck(
+    "update output includes diff summary",
+    mustOutput(updatedWrite).change.diff.includes("-export const value = 1;")
+      && mustOutput(updatedWrite).change.diff.includes("+export const value = 3;"),
+  ));
 
   const staleRead = mustOutput(await registry.run<ReadOutput>("read", {
     path: "src/example.ts",
@@ -162,9 +176,15 @@ async function main(): Promise<void> {
     literal: true,
   }, context)));
 
-  results.push(record("bash runs shell command", "success", await registry.run<BashOutput>("bash", {
+  const bashRun = await registry.run<BashOutput>("bash", {
     command: `${JSON.stringify(process.execPath)} -e "console.log('ok')"`,
-  }, context)));
+  }, context);
+  results.push(record("bash runs shell command", "success", bashRun));
+  results.push(recordCheck(
+    "bash output shows running command",
+    mustOutput(bashRun).command.includes("console.log")
+      && mustOutput(bashRun).statusLine.includes("running:"),
+  ));
 
   results.push(recordFailureCode("read missing path is actionable", "PATH_NOT_FOUND", await registry.run("read", {
     path: "batch-tool.ts",
@@ -217,6 +237,8 @@ async function main(): Promise<void> {
 
   const agentsText = await collectSlashText(slashAgent, "/agents");
   results.push(recordCheck("slash agents documents subagent roles", agentsText.includes("Built-in subagents") && agentsText.includes("research") && agentsText.includes("review") && agentsText.includes("plan")));
+  const sessionsText = await collectSlashText(slashAgent, "/sessions");
+  results.push(recordCheck("slash sessions lists resumable store", sessionsText.includes("Saved sessions") || sessionsText.includes("No saved sessions")));
 
   const instructions = createCodingInstructions(workspace);
   results.push(recordCheck(
@@ -225,7 +247,8 @@ async function main(): Promise<void> {
       && instructions.includes("Completion contract")
       && instructions.includes("Use subagent immediately")
       && instructions.includes("Do not run git commands")
-      && instructions.includes("Clean-code target"),
+      && instructions.includes("parallel")
+      && instructions.includes("Clean-code target")
   ));
 
   const contextInstructions = createCodingInstructions(workspace, loadInstructionDocuments(workspace, {
@@ -335,8 +358,8 @@ async function main(): Promise<void> {
     "agent stream adds inline progress and tool suggestions",
     progressParts.includes("Step 1")
       && progressParts.includes("Tip:")
-      && progressParts.includes("Tool")
       && progressParts.includes("search running")
+      && progressParts.includes("parallel x2: bash running: npm run build")
       && progressParts.includes("Step complete"),
   ));
 
@@ -372,7 +395,10 @@ async function collectInlineProgressText(): Promise<string> {
     yield { type: "start-step" };
     yield { type: "tool-input-start", toolCallId: "call-1", toolName: "search" };
     yield { type: "tool-input-available", toolCallId: "call-1", toolName: "search", input: { query: "needle" } };
+    yield { type: "tool-input-start", toolCallId: "call-2", toolName: "bash" };
+    yield { type: "tool-input-available", toolCallId: "call-2", toolName: "bash", input: { command: "npm run build" } };
     yield { type: "tool-output-available", toolCallId: "call-1", output: { matches: [] } };
+    yield { type: "tool-output-available", toolCallId: "call-2", output: { exitCode: 0 } };
     yield { type: "finish-step" };
   }
 

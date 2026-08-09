@@ -12,6 +12,7 @@ import {
   type OpenAICompatibleCodingAgentOptions,
 } from "../ai/coding-agent.js";
 import { renderActivityPulse, renderCliPanel, renderStatusBar } from "./status-bar.js";
+import { formatSessionList, listSessions, loadSession, saveSession } from "./session-store.js";
 
 const SETTINGS_KEYS = ["model", "base-url", "api-key", "provider-name", "approval", "agent-md", "skills-md"] as const;
 const COMPACT_KEEP_MESSAGES = 8;
@@ -29,6 +30,11 @@ const RUNTIME_SUGGESTIONS = [
 ] as const;
 
 type SettingsKey = typeof SETTINGS_KEYS[number];
+type SlashCommandAgentOptions = OpenAICompatibleCodingAgentOptions & {
+  readonly resumeSession?: boolean;
+  readonly resumeSessionId?: string;
+  readonly sessionId?: string;
+};
 type RuntimeSettings = OpenAICompatibleCodingAgentOptions;
 type CommandResult = {
   readonly text: string;
@@ -36,7 +42,7 @@ type CommandResult = {
 };
 
 /** Adds local slash commands to the TUI without spending an LLM call. */
-export function createSlashCommandAgent(options: OpenAICompatibleCodingAgentOptions): Agent {
+export function createSlashCommandAgent(options: SlashCommandAgentOptions): Agent {
   return new SlashCommandAgent(options) as unknown as Agent;
 }
 
@@ -47,9 +53,17 @@ class SlashCommandAgent {
   private current: OpenAICompatibleCodingAgent;
   private compactNextPrompts = false;
   private compactRuns = 0;
+  private readonly resumeSession: boolean;
+  private readonly resumeSessionId: string | undefined;
+  private readonly sessionId: string | undefined;
+  private sessionPrefix: readonly ModelMessage[] = [];
+  private sessionLoaded = false;
 
-  public constructor(options: OpenAICompatibleCodingAgentOptions) {
+  public constructor(options: SlashCommandAgentOptions) {
     this.settings = { ...options };
+    this.resumeSession = options.resumeSession !== false;
+    this.resumeSessionId = options.resumeSessionId;
+    this.sessionId = options.sessionId;
     this.current = createOpenAICompatibleCodingAgent(this.optionsWithTuiLogger());
   }
 
@@ -64,36 +78,44 @@ class SlashCommandAgent {
   public async generate(options: { readonly prompt?: unknown; readonly messages?: unknown }): Promise<unknown> {
     const slash = parseSlashCommand(extractPromptText(options));
     if (slash !== undefined) {
-      const result = this.executeSlashCommand(slash);
+      const result = await this.executeSlashCommand(slash);
       if (result.rebuildAgent === true) {
         this.rebuildAgent();
       }
       return syntheticGenerateResult(result.text);
     }
 
-    return await this.current.agent.generate(this.prepareOptions(options) as never);
+    return await this.current.agent.generate(await this.prepareOptions(options) as never);
   }
 
   public async stream(options: { readonly prompt?: unknown; readonly messages?: unknown }): Promise<unknown> {
     const slash = parseSlashCommand(extractPromptText(options));
     if (slash !== undefined) {
-      const result = this.executeSlashCommand(slash);
+      const result = await this.executeSlashCommand(slash);
       if (result.rebuildAgent === true) {
         this.rebuildAgent();
       }
       return syntheticStreamResult(result.text);
     }
 
-    const prepared = this.prepareOptions(options);
-    return streamWithProcessingAnimation(() => this.current.agent.stream(prepared as never));
+    const prepared = await this.prepareOptions(options);
+    const baseMessages = Array.isArray(prepared.prompt) ? prepared.prompt as readonly ModelMessage[] : [];
+    const result = await streamWithProcessingAnimation(() => this.current.agent.stream(prepared as never));
+    return withSessionCapture(result, (assistantText) => this.persistSession(baseMessages, assistantText));
   }
 
-  private prepareOptions<T extends { readonly prompt?: unknown; readonly messages?: unknown }>(options: T): T {
-    if (!this.compactNextPrompts || !Array.isArray(options.prompt)) {
+  private async prepareOptions<T extends { readonly prompt?: unknown; readonly messages?: unknown }>(options: T): Promise<T> {
+    const prompt = Array.isArray(options.prompt) ? await this.messagesWithSessionPrefix(options.prompt as readonly ModelMessage[]) : undefined;
+    if (prompt === undefined && !this.compactNextPrompts) {
       return options;
     }
 
-    const filtered = removeSlashCommandMessages(options.prompt as readonly ModelMessage[]);
+    const messages = prompt ?? options.prompt as readonly ModelMessage[];
+    if (!this.compactNextPrompts || !Array.isArray(messages)) {
+      return { ...options, prompt: messages } as T;
+    }
+
+    const filtered = removeSlashCommandMessages(messages);
     const recent = filtered.slice(-COMPACT_KEEP_MESSAGES);
     const compacted = pruneMessages({
       messages: recent,
@@ -105,10 +127,10 @@ class SlashCommandAgent {
     return {
       ...options,
       prompt: compacted,
-    };
+    } as T;
   }
 
-  private executeSlashCommand(command: SlashCommand): CommandResult {
+  private async executeSlashCommand(command: SlashCommand): Promise<CommandResult> {
     switch (command.name) {
       case "help":
         return { text: slashHelpText(this.settings, this.compactNextPrompts, this.compactRuns) };
@@ -116,6 +138,8 @@ class SlashCommandAgent {
         return this.applySettingsCommand(command.args);
       case "agents":
         return { text: agentsHelpText() };
+      case "sessions":
+        return { text: formatSessionList(await listSessions()) };
       case "compact":
         this.compactNextPrompts = true;
         this.compactRuns += 1;
@@ -127,6 +151,44 @@ class SlashCommandAgent {
           ].join("\n\n"),
         };
     }
+  }
+
+  private async messagesWithSessionPrefix(messages: readonly ModelMessage[]): Promise<readonly ModelMessage[]> {
+    await this.loadSessionPrefix();
+    if (this.sessionPrefix.length === 0) {
+      return messages;
+    }
+    return [...this.sessionPrefix, ...messages];
+  }
+
+  private async loadSessionPrefix(): Promise<void> {
+    if (this.sessionLoaded) {
+      return;
+    }
+    this.sessionLoaded = true;
+    if (!this.resumeSession) {
+      return;
+    }
+    const session = await loadSession(this.resumeSessionId, this.settings.cwd);
+    if (session === undefined || session.messages.length === 0) {
+      return;
+    }
+    this.sessionPrefix = session.messages;
+  }
+
+  private async persistSession(baseMessages: readonly ModelMessage[], assistantText: string): Promise<void> {
+    if (baseMessages.length === 0 && assistantText.trim().length === 0) {
+      return;
+    }
+    const messages = assistantText.trim().length === 0
+      ? baseMessages
+      : [...baseMessages, { role: "assistant" as const, content: assistantText }];
+    await saveSession({
+      id: this.sessionId,
+      cwd: this.settings.cwd,
+      model: this.settings.model,
+      messages,
+    });
   }
 
   private applySettingsCommand(args: readonly string[]): CommandResult {
@@ -248,7 +310,8 @@ type SlashCommand =
   | { readonly name: "help"; readonly args: readonly string[] }
   | { readonly name: "settings"; readonly args: readonly string[] }
   | { readonly name: "compact"; readonly args: readonly string[] }
-  | { readonly name: "agents"; readonly args: readonly string[] };
+  | { readonly name: "agents"; readonly args: readonly string[] }
+  | { readonly name: "sessions"; readonly args: readonly string[] };
 
 function parseSlashCommand(prompt: string): SlashCommand | undefined {
   const trimmed = prompt.trim();
@@ -269,6 +332,9 @@ function parseSlashCommand(prompt: string): SlashCommand | undefined {
     case "agents":
     case "subagents":
       return { name: "agents", args };
+    case "sessions":
+    case "resume":
+      return { name: "sessions", args };
     default:
       return {
         name: "help",
@@ -400,6 +466,7 @@ function slashHelpText(settings: RuntimeSettings, compactEnabled: boolean, compa
       "`/settings ollama`  Local Ollama in one command.",
       "`/settings auto`  Reduce approval friction in trusted workspaces.",
       "`/compact`  Prune old slash chatter and tool-heavy history.",
+      "`/sessions`  List the five saved resumable sessions.",
       "`/agents`  Show read-only subagent delegation modes.",
     ], 78),
     "",
@@ -578,6 +645,33 @@ async function streamWithProcessingAnimation(createResult: () => PromiseLike<unk
   } as unknown as StreamTextResult<never, never, never>;
 }
 
+function withSessionCapture(
+  result: StreamTextResult<never, never, never>,
+  onComplete: (assistantText: string) => Promise<void>,
+): StreamTextResult<never, never, never> {
+  const fullStream = captureSessionStream(result.fullStream, onComplete);
+  return {
+    ...result,
+    fullStream,
+    stream: fullStream,
+  } as StreamTextResult<never, never, never>;
+}
+
+async function* captureSessionStream(stream: AsyncIterable<unknown>, onComplete: (assistantText: string) => Promise<void>): AsyncIterable<unknown> {
+  let assistantText = "";
+  try {
+    for await (const chunk of stream) {
+      const record = asRecord(chunk);
+      if (record?.type === "text-delta") {
+        assistantText += readString(record, "text") ?? "";
+      }
+      yield chunk;
+    }
+  } finally {
+    await onComplete(assistantText);
+  }
+}
+
 async function* animatedFullStream(resultPromise: Promise<unknown>): AsyncIterable<unknown> {
   let settled = false;
   let result: { readonly fullStream: AsyncIterable<unknown> } | undefined;
@@ -633,6 +727,7 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
   let currentStatusId: string | undefined;
   let suggestionIndex = randomSuggestionIndex();
   const toolNames = new Map<string, string>();
+  const activeToolCalls = new Set<string>();
   const iterator = stream[Symbol.asyncIterator]();
   let nextChunk = iterator.next().then(toStreamChunk);
 
@@ -667,6 +762,7 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
       step += 1;
       currentStatusId = `harness-progress-${step}`;
       suggestionIndex = nextSuggestionIndex(suggestionIndex);
+      activeToolCalls.clear();
       yield chunk;
       yield { type: "reasoning-start", id: currentStatusId };
       yield {
@@ -682,26 +778,35 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
       const toolCallId = readString(record, "toolCallId");
       if (toolCallId !== undefined) {
         toolNames.set(toolCallId, toolName);
+        activeToolCalls.add(toolCallId);
       }
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: `\n${renderStatusBar("Tool", `${toolName} input streaming. ${toolSuggestion(toolName)}`, 72, "busy", 0.45)}`,
+        text: `\n${renderStatusBar("Tool", `${parallelPrefix(activeToolCalls.size)}${toolName} input streaming. ${toolSuggestion(toolName)}`, 72, "busy", 0.45)}`,
       };
     }
 
     if (record !== undefined && currentStatusId !== undefined && chunkType === "tool-input-available") {
       const toolName = toolNameFor(record, toolNames);
+      const toolCallId = readString(record, "toolCallId");
+      if (toolCallId !== undefined) {
+        activeToolCalls.add(toolCallId);
+      }
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: `\n${renderStatusBar("Tool", `${toolName} running. ${toolSuggestion(toolName)}`, 72, "busy", 0.65)}`,
+        text: `\n${renderStatusBar("Tool", `${parallelPrefix(activeToolCalls.size)}${toolRunMessage(toolName, record)}`, 72, "busy", 0.65)}`,
       };
     }
 
     if (record !== undefined && currentStatusId !== undefined && (chunkType === "tool-output-available" || chunkType === "tool-output-denied" || chunkType === "tool-output-error")) {
       const toolName = toolNameFor(record, toolNames);
       const failed = chunkType === "tool-output-error" || chunkType === "tool-output-denied";
+      const toolCallId = readString(record, "toolCallId");
+      if (toolCallId !== undefined) {
+        activeToolCalls.delete(toolCallId);
+      }
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
@@ -775,6 +880,23 @@ function toolSuggestion(toolName: string): string {
     default:
       return pickRuntimeSuggestion();
   }
+}
+
+function parallelPrefix(activeCount: number): string {
+  return activeCount > 1 ? `parallel x${activeCount}: ` : "";
+}
+
+function toolRunMessage(toolName: string, record: Record<string, unknown>): string {
+  const input = asRecord(record.input);
+  if (toolName === "bash") {
+    const command = input === undefined ? undefined : readString(input, "command");
+    return command === undefined ? "bash running." : `bash running: ${command}`;
+  }
+  if (toolName === "subagent") {
+    const goal = input === undefined ? undefined : readString(input, "taskGoal");
+    return goal === undefined ? "subagent running." : `subagent running: ${goal}`;
+  }
+  return `${toolName} running. ${toolSuggestion(toolName)}`;
 }
 
 function toolNameFor(record: Record<string, unknown>, toolNames: ReadonlyMap<string, string>): string {

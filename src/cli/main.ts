@@ -4,6 +4,7 @@ import type { ApprovalMode } from "../ai/ai-tools.js";
 import { runOpenAICompatibleAi } from "../ai/openai-compatible-ai.js";
 import { runOpenAICompatibleAiTui } from "../tui/ai-tui.js";
 import { renderActivityPulse, renderCliPanel, renderCliSplash } from "../tui/status-bar.js";
+import { formatSessionList, listSessions } from "../tui/session-store.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const DEFAULT_PROVIDER_NAME = "openai-compatible";
@@ -45,6 +46,8 @@ type TuiCommandOptions = SharedAgentCommandOptions & {
   readonly toolDisplay?: string;
   readonly reasoningDisplay?: string;
   readonly setup?: boolean;
+  readonly resume?: boolean | string;
+  readonly sessionId?: string;
 };
 
 const UI_DENSITY_PRESETS: Record<UiDensity, {
@@ -53,11 +56,11 @@ const UI_DENSITY_PRESETS: Record<UiDensity, {
 }> = {
   compact: {
     toolDisplay: "collapsed",
-    reasoningDisplay: "auto-collapsed",
+    reasoningDisplay: "full",
   },
   normal: {
     toolDisplay: "auto-collapsed",
-    reasoningDisplay: "collapsed",
+    reasoningDisplay: "full",
   },
   debug: {
     toolDisplay: "full",
@@ -96,6 +99,12 @@ addSharedAgentOptions(
   }
 });
 
+program.command("sessions")
+  .description("List the five saved resumable TUI sessions")
+  .action(async () => {
+    process.stdout.write(`${formatSessionList(await listSessions())}\n`);
+  });
+
 addTuiOptions(
   addSharedAgentOptions(
     program.command("tui")
@@ -109,6 +118,9 @@ addTuiOptions(
     toolDisplay: display.toolDisplay,
     reasoningDisplay: display.reasoningDisplay,
     providerSetupMode: options.setup === false ? "never" : options.setup === true ? "always" : "auto",
+    resumeSession: options.resume !== false,
+    resumeSessionId: typeof options.resume === "string" ? options.resume : undefined,
+    sessionId: options.sessionId,
   });
 });
 
@@ -135,7 +147,10 @@ function addTuiOptions(command: Command): Command {
     .option("--tool-display <mode>", `override tool display: ${displayModes}`)
     .option("--reasoning-display <mode>", `override reasoning display: ${displayModes}`)
     .option("--setup", "open the rich provider setup UI before the TUI")
-    .option("--no-setup", "skip the provider setup UI");
+    .option("--no-setup", "skip the provider setup UI")
+    .option("--resume [id]", "resume the latest saved session or a specific session id", true)
+    .option("--no-resume", "start without loading a saved session")
+    .option("--session-id <id>", "stable id to use when saving this TUI session");
 }
 
 function toRuntimeOptions(options: SharedAgentCommandOptions) {

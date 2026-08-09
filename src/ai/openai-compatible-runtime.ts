@@ -25,6 +25,7 @@ const BASE_CODING_INSTRUCTIONS = [
   "Use read before update, then pass the fresh fileHash and rangeHash to update.",
   "Prefer update for existing files and write for new files or intentional full replacement.",
   "Use bash only for focused verification commands; pass a normal shell command string.",
+  "When several read-only or verification tool calls are independent, request them together in one step; the AI SDK executes same-step tools in parallel.",
   "Do not run git commands to collect repository context for the LLM; use search and read instead.",
   "When bash returns a non-zero exitCode, inspect stdout/stderr and fix the command or code.",
   "When a tool returns ok=false, read the code/details, recover with a different action, and continue the loop.",
