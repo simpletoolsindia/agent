@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { createHarness, type ReadOutput, type SearchOutput, type BashOutput } from "../src/index.js";
 import { JsonConsoleLogger } from "../src/core/logger.js";
 import type { ToolResult } from "../src/core/registry.js";
-import { createSlashCommandAgent, withInlineProgress } from "../src/tui/slash-agent.js";
+import { createSlashCommandAgent, pickRuntimeSuggestion, withInlineProgress } from "../src/tui/slash-agent.js";
 import { reduceProviderSetupInput, renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
 import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
-import { renderStatusBar } from "../src/tui/status-bar.js";
+import { renderStatusBar, visibleLength } from "../src/tui/status-bar.js";
 
 const workspace = join(process.cwd(), ".correctness-workspace");
 
@@ -271,11 +271,11 @@ async function main(): Promise<void> {
     message: "Ready",
   }, 88);
   results.push(recordCheck(
-    "provider setup renders rich fields",
+    "provider setup renders modern rich fields",
     setupScreen.includes("Provider setup")
-      && setupScreen.includes("Server URL")
-      && setupScreen.includes("API key")
-      && setupScreen.includes("Agent.md path")
+      && setupScreen.includes("Harness AI cockpit")
+      && setupScreen.includes("Connection")
+      && setupScreen.includes("Workspace context")
       && setupScreen.includes("Approval mode")
       && setupScreen.includes("Ctrl+A"),
   ));
@@ -300,16 +300,22 @@ async function main(): Promise<void> {
   const statusBar = renderStatusBar("Processing", "Waiting for model response or tool stream", 48, "busy");
   results.push(recordCheck(
     "status bar renders bounded processing state",
-    statusBar.includes("Processing") && statusBar.includes("█") && statusBar.length < 80,
+    statusBar.includes("Processing") && statusBar.includes("▰") && visibleLength(statusBar) <= 48,
   ));
 
   const progressParts = await collectInlineProgressText();
   results.push(recordCheck(
-    "agent stream adds inline progress and tool status",
+    "agent stream adds inline progress and tool suggestions",
     progressParts.includes("Step 1")
+      && progressParts.includes("Tip:")
       && progressParts.includes("Tool")
       && progressParts.includes("search running")
       && progressParts.includes("Step complete"),
+  ));
+
+  results.push(recordCheck(
+    "runtime suggestions rotate by seed",
+    pickRuntimeSuggestion(0) !== pickRuntimeSuggestion(1),
   ));
 
   const passed = results.filter((result) => result.passed).length;

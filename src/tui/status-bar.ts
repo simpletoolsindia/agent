@@ -3,19 +3,21 @@ const ESC = "\x1B";
 const GREEN = `${ESC}[32m`;
 const YELLOW = `${ESC}[33m`;
 const CYAN = `${ESC}[36m`;
+const MAGENTA = `${ESC}[35m`;
 const DIM = `${ESC}[2m`;
+const BOLD = `${ESC}[1m`;
 const RESET = `${ESC}[0m`;
 
 export type StatusTone = "idle" | "busy" | "success" | "warn";
 
 export function renderStatusBar(label: string, message: string, width: number, tone: StatusTone = "idle", progress?: number): string {
   const safeWidth = Math.max(20, width);
-  const barWidth = Math.max(6, Math.min(18, Math.floor(safeWidth / 5)));
+  const barWidth = Math.max(6, Math.min(16, Math.floor(safeWidth / 6)));
   const normalizedProgress = progress === undefined ? defaultProgress(tone) : Math.min(1, Math.max(0, progress));
   const filled = Math.round(barWidth * normalizedProgress);
   const color = toneColor(tone);
-  const bar = `${color}${"█".repeat(filled)}${DIM}${"░".repeat(barWidth - filled)}${RESET}`;
-  const prefix = `${color}${label}${RESET} ${bar}`;
+  const bar = `${color}${"▰".repeat(filled)}${DIM}${"▱".repeat(barWidth - filled)}${RESET}`;
+  const prefix = `${DIM}╭${RESET} ${color}${BOLD}${label}${RESET} ${bar} ${DIM}│${RESET}`;
   const available = Math.max(0, safeWidth - visibleLength(prefix) - 1);
   return `${prefix} ${clipAnsi(message, available)}`;
 }
@@ -84,6 +86,6 @@ function toneColor(tone: StatusTone): string {
     case "warn":
       return YELLOW;
     case "idle":
-      return DIM;
+      return MAGENTA;
   }
 }

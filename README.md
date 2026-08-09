@@ -162,13 +162,13 @@ npm run tui -- \
   --ui-density compact
 ```
 
-The TUI opens a rich setup screen when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, approval mode, `agent.md`, and `skills.md` before the chat starts. The screen uses a bounded status/progress bar so setup messages do not overlap narrow terminals. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
+The TUI opens a modern setup cockpit when key connection settings are missing. Use it to edit model name, OpenAI-compatible server URL, API key, approval mode, `agent.md`, and `skills.md` before the chat starts. The screen groups connection and workspace context fields, shows active profile chips, and keeps status/progress bounded so setup messages do not overlap narrow terminals. During model/tool work the TUI shows inline progress plus rotating usage suggestions such as when to use `search`, `read`, `update`, `write`, `bash`, `/settings`, and `/compact`. The title then shows the workspace, model, approval mode, and slash-command hints. `--context-size` defaults to `32768` and shows context usage in the title.
 
 UI density presets:
 
 | Preset | Tool cards | Reasoning | Use when |
 | --- | --- | --- | --- |
-| `compact` | collapsed | auto-collapsed | Default. Best for long tool-heavy sessions with inline progress. |
+| `compact` | collapsed | auto-collapsed | Default. Shows inline progress and rotating suggestions without full reasoning spam. |
 | `normal` | auto-collapsed | collapsed | Shows the latest active tool with more detail. |
 | `debug` | full | full | Shows full tool input/output and reasoning. |
 
@@ -178,7 +178,7 @@ Override a preset when needed:
 npm run tui -- --ui-density compact --tool-display auto-collapsed
 ```
 
-Provider setup controls:
+Provider setup cockpit controls:
 
 | Key | Action |
 | --- | --- |
@@ -347,7 +347,7 @@ Options:
 Useful TUI slash commands:
 
 ```txt
-/settings menu              Show setup shortcuts, active config, and examples.
+/settings menu              Show setup cockpit, active config, examples, and a runtime tip.
 /settings ollama            Configure local Ollama defaults.
 /settings auto              Turn on auto approval for tools that support it.
 /settings safe              Turn approval prompts back on.

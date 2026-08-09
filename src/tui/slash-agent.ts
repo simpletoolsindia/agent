@@ -16,6 +16,17 @@ import { renderStatusBar } from "./status-bar.js";
 const SETTINGS_KEYS = ["model", "base-url", "api-key", "provider-name", "approval", "agent-md", "skills-md"] as const;
 const COMPACT_KEEP_MESSAGES = 8;
 const PROCESSING_NOTICE_DELAY_MS = 250;
+const SUGGESTION_INTERVAL_MS = 2_500;
+const RUNTIME_SUGGESTIONS = [
+  "Tip: use `search` first when you know a symbol or phrase.",
+  "Tip: use `read` with line ranges to keep context small.",
+  "Tip: use `update` after `read` for hash-guarded edits.",
+  "Tip: use `write` for new files or intentional full replacements.",
+  "Tip: use `bash` only for focused verification commands.",
+  "Tip: use `/settings ollama` for local models.",
+  "Tip: use `/settings auto` to reduce approval prompts in trusted workspaces.",
+  "Tip: use `/compact` after long tool-heavy sessions.",
+] as const;
 
 type SettingsKey = typeof SETTINGS_KEYS[number];
 type RuntimeSettings = OpenAICompatibleCodingAgentOptions;
@@ -320,17 +331,17 @@ function parseSettingsKey(value: string): SettingsKey | undefined {
 
 function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, compactRuns: number): string {
   return [
-    "## Settings",
+    "## Settings cockpit",
     "",
-    "Quick setup:",
+    "Quick actions:",
     "",
-    "- `/settings ollama` sets `base-url` to `http://localhost:11434/v1` and API key to `ollama`.",
-    "- `/settings auto` turns on auto approval for tools that support it.",
-    "- `/settings safe` turns approval prompts back on.",
-    "- `/settings openai` clears `base-url` and uses the default OpenAI endpoint.",
-    "- `/settings menu` shows this screen. `/settings help` shows commands only.",
+    "- `/settings ollama` applies local Ollama defaults in one command.",
+    "- `/settings auto` turns on auto approval for trusted workspaces.",
+    "- `/settings safe` restores approval prompts.",
+    "- `/settings openai` clears the custom endpoint and uses OpenAI defaults.",
+    "- `/settings menu` shows this cockpit. `/settings help` shows commands only.",
     "",
-    "Active values:",
+    "Active profile:",
     "",
     `| Setting | Value |`,
     `| --- | --- |`,
@@ -353,6 +364,8 @@ function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, comp
     "/settings agent-md AGENT.md skills-md SKILLS.md",
     "/settings api-key none",
     "```",
+    "",
+    `Runtime suggestion: ${pickRuntimeSuggestion(0)}`,
   ].join("\n");
 }
 
@@ -577,15 +590,26 @@ async function* animatedFullStream(resultPromise: Promise<unknown>): AsyncIterab
 
   await delay(PROCESSING_NOTICE_DELAY_MS);
   if (!settled) {
+    let suggestionIndex = randomSuggestionIndex();
+    let ticks = 0;
     yield { type: "start-step" };
     yield { type: "reasoning-start", id: "processing" };
     yield {
       type: "reasoning-delta",
       id: "processing",
-      text: renderStatusBar("Processing", "Waiting for model response or tool stream…", 72, "busy", 0.25),
+      text: renderStatusBar("Processing", `Starting model stream. ${pickRuntimeSuggestion(suggestionIndex)}`, 72, "busy", 0.25),
     };
     while (!settled) {
       await delay(250);
+      ticks += 1;
+      if (!settled && ticks % Math.max(1, Math.round(SUGGESTION_INTERVAL_MS / 250)) === 0) {
+        suggestionIndex = nextSuggestionIndex(suggestionIndex);
+        yield {
+          type: "reasoning-delta",
+          id: "processing",
+          text: `\n${renderStatusBar("Still running", pickRuntimeSuggestion(suggestionIndex), 72, "busy", 0.35)}`,
+        };
+      }
     }
     yield { type: "reasoning-end", id: "processing" };
   }
@@ -601,21 +625,48 @@ async function* animatedFullStream(resultPromise: Promise<unknown>): AsyncIterab
 export async function* withInlineProgress(stream: AsyncIterable<unknown>): AsyncIterable<unknown> {
   let step = 0;
   let currentStatusId: string | undefined;
+  let suggestionIndex = randomSuggestionIndex();
   const toolNames = new Map<string, string>();
+  const iterator = stream[Symbol.asyncIterator]();
+  let nextChunk = iterator.next().then(toStreamChunk);
 
-  for await (const chunk of stream) {
+  while (true) {
+    const waitResult = currentStatusId === undefined
+      ? await nextChunk
+      : await Promise.race([
+        nextChunk,
+        suggestionTick(SUGGESTION_INTERVAL_MS),
+      ]);
+
+    if (waitResult.type === "suggestion") {
+      suggestionIndex = nextSuggestionIndex(suggestionIndex);
+      yield {
+        type: "reasoning-delta",
+        id: currentStatusId,
+        text: `\n${renderStatusBar("Suggestion", pickRuntimeSuggestion(suggestionIndex), 72, "idle", 0.15)}`,
+      };
+      continue;
+    }
+
+    if (waitResult.result.done === true) {
+      break;
+    }
+
+    const chunk = waitResult.result.value;
+    nextChunk = iterator.next().then(toStreamChunk);
     const record = asRecord(chunk);
     const chunkType = typeof record?.type === "string" ? record.type : "";
 
     if (chunkType === "start-step") {
       step += 1;
       currentStatusId = `harness-progress-${step}`;
+      suggestionIndex = nextSuggestionIndex(suggestionIndex);
       yield chunk;
       yield { type: "reasoning-start", id: currentStatusId };
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: renderStatusBar(`Step ${step}`, "Thinking and planning next action…", 72, "busy", 0.3),
+        text: renderStatusBar(`Step ${step}`, `Thinking. ${pickRuntimeSuggestion(suggestionIndex)}`, 72, "busy", 0.3),
       };
       continue;
     }
@@ -629,7 +680,7 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: `\n${renderStatusBar("Tool", `${toolName} input streaming…`, 72, "busy", 0.45)}`,
+        text: `\n${renderStatusBar("Tool", `${toolName} input streaming. ${toolSuggestion(toolName)}`, 72, "busy", 0.45)}`,
       };
     }
 
@@ -638,7 +689,7 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
       yield {
         type: "reasoning-delta",
         id: currentStatusId,
-        text: `\n${renderStatusBar("Tool", `${toolName} running…`, 72, "busy", 0.65)}`,
+        text: `\n${renderStatusBar("Tool", `${toolName} running. ${toolSuggestion(toolName)}`, 72, "busy", 0.65)}`,
       };
     }
 
@@ -668,6 +719,55 @@ export async function* withInlineProgress(stream: AsyncIterable<unknown>): Async
     }
 
     yield chunk;
+  }
+}
+
+type StreamWaitResult =
+  | { readonly type: "chunk"; readonly result: IteratorResult<unknown> }
+  | { readonly type: "suggestion" };
+
+function toStreamChunk(result: IteratorResult<unknown>): StreamWaitResult {
+  return { type: "chunk", result };
+}
+
+function suggestionTick(ms: number): Promise<StreamWaitResult> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve({ type: "suggestion" }), ms);
+    timer.unref?.();
+  });
+}
+
+export function pickRuntimeSuggestion(seed: number = randomSuggestionIndex()): string {
+  return RUNTIME_SUGGESTIONS[Math.abs(Math.trunc(seed)) % RUNTIME_SUGGESTIONS.length];
+}
+
+function randomSuggestionIndex(): number {
+  return Math.floor(Math.random() * RUNTIME_SUGGESTIONS.length);
+}
+
+function nextSuggestionIndex(current: number): number {
+  if (RUNTIME_SUGGESTIONS.length < 2) {
+    return 0;
+  }
+  return (current + 1 + Math.floor(Math.random() * (RUNTIME_SUGGESTIONS.length - 1))) % RUNTIME_SUGGESTIONS.length;
+}
+
+function toolSuggestion(toolName: string): string {
+  switch (toolName) {
+    case "search":
+      return "Search is fastest for locating code before reading files.";
+    case "read":
+      return "Line ranges keep the model focused.";
+    case "update":
+      return "Hash checks protect against stale edits.";
+    case "write":
+      return "Use overwrite only for intentional replacements.";
+    case "bash":
+      return "Keep commands focused on verification.";
+    case "subagent":
+      return "Delegate broad research without filling the main context.";
+    default:
+      return pickRuntimeSuggestion();
   }
 }
 

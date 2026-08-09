@@ -12,6 +12,8 @@ const RESET = `${ESC}[0m`;
 const CYAN = `${ESC}[36m`;
 const GREEN = `${ESC}[32m`;
 const YELLOW = `${ESC}[33m`;
+const BLUE = `${ESC}[34m`;
+const MAGENTA = `${ESC}[35m`;
 
 const FIELDS = ["model", "baseURL", "apiKey", "approvalMode", "agentMdPath", "skillsMdPath"] as const;
 const FIELD_LABELS: Record<ProviderSetupField, string> = {
@@ -268,19 +270,23 @@ export function reduceProviderSetupInput(state: ProviderSetupState, key: string)
 }
 
 export function renderProviderSetupScreen(state: ProviderSetupState, width: number): string {
-  const safeWidth = Math.max(64, width);
+  const safeWidth = Math.max(72, width);
   const contentWidth = safeWidth - 4;
+  const approval = normalizedApprovalMode(state.values.approvalMode, "safe") ?? "safe";
   const rows = [
     topBorder(safeWidth, " Provider setup "),
-    framedLine(`${BOLD}Configure the coding agent${RESET}`, contentWidth),
-    framedLine(`${DIM}Use presets for fast setup, then adjust model, provider, and markdown context.${RESET}`, contentWidth),
+    framedLine(`${BOLD}${CYAN}Harness AI cockpit${RESET} ${DIM}modern setup for model, safety, and workspace context${RESET}`, contentWidth),
+    framedLine(`${renderPill("model", state.values.model.trim().length === 0 ? "unset" : state.values.model.trim())} ${renderPill("approval", approval)} ${renderPill("endpoint", state.values.baseURL.trim().length === 0 ? "OpenAI default" : "custom")}`, contentWidth),
     framedLine("", contentWidth),
-    ...FIELDS.flatMap((field, index) => renderFieldRows(state, field, index, contentWidth)),
+    renderSectionTitle("Connection", contentWidth),
+    ...FIELDS.slice(0, 4).flatMap((field, index) => renderFieldRows(state, field, index, contentWidth)),
+    renderSectionTitle("Workspace context", contentWidth),
+    ...FIELDS.slice(4).flatMap((field, offset) => renderFieldRows(state, field, offset + 4, contentWidth)),
     framedLine("", contentWidth),
-    framedLine(`${CYAN}Tab/↓${RESET} next  ${CYAN}↑${RESET} previous  ${CYAN}Enter${RESET} next/start  ${CYAN}Ctrl+S${RESET} start`, contentWidth),
-    framedLine(`${CYAN}Ctrl+O${RESET} Ollama  ${CYAN}Ctrl+A${RESET} auto approval  ${CYAN}Ctrl+D${RESET} OpenAI  ${CYAN}Ctrl+U${RESET} clear  ${CYAN}Esc${RESET} cancel`, contentWidth),
+    framedLine(renderShortcutRow(["Tab/↓ next", "↑ previous", "Enter next/start", "Ctrl+S start"], contentWidth), contentWidth),
+    framedLine(renderShortcutRow(["Ctrl+O Ollama", "Ctrl+A auto approval", "Ctrl+D OpenAI", "Ctrl+U clear", "Esc cancel"], contentWidth), contentWidth),
     framedLine("", contentWidth),
-    framedLine(renderStatusBar("Status", state.message ?? "Ready", contentWidth, state.message === undefined ? "idle" : "busy"), contentWidth),
+    framedLine(renderStatusBar("Status", state.message ?? "Ready. Use Ctrl+O for Ollama or Ctrl+A for auto approval.", contentWidth, state.message === undefined ? "idle" : "busy"), contentWidth),
     bottomBorder(safeWidth),
   ];
   return rows.join("\n");
@@ -307,14 +313,13 @@ function validateProviderSetup(state: ProviderSetupState):
 
 function renderFieldRows(state: ProviderSetupState, field: ProviderSetupField, index: number, width: number): string[] {
   const active = state.activeField === index;
-  const marker = active ? `${GREEN}●${RESET}` : " ";
+  const marker = active ? `${GREEN}◆${RESET}` : `${DIM}◇${RESET}`;
   const rawValue = state.values[field];
   const visibleValue = field === "apiKey" && rawValue.length > 0 ? "•".repeat(Math.min(rawValue.length, 32)) : rawValue;
-  const label = `${marker} ${BOLD}${FIELD_LABELS[field]}${RESET}`;
-  const value = visibleValue.length === 0 ? `${DIM}<empty>${RESET}` : visibleValue;
+  const value = visibleValue.length === 0 ? `${DIM}<empty>${RESET}` : active ? `${CYAN}${visibleValue}${RESET}` : visibleValue;
+  const indexText = `${DIM}${index + 1}/${FIELDS.length}${RESET}`;
   return [
-    framedLine(label, width),
-    framedLine(`  ${active ? `${CYAN}>${RESET}` : " "} ${value}`, width),
+    framedLine(`${marker} ${indexText} ${BOLD}${FIELD_LABELS[field].padEnd(15)}${RESET} ${value}`, width),
     framedLine(`    ${DIM}${FIELD_HELP[field]}${RESET}`, width),
   ];
 }
@@ -362,4 +367,19 @@ function framedLine(text: string, width: number): string {
   const clipped = clipAnsi(text, width);
   const padding = " ".repeat(Math.max(0, width - visibleLength(clipped)));
   return `│ ${clipped}${padding} │`;
+}
+
+function renderSectionTitle(title: string, width: number): string {
+  const label = ` ${BLUE}${BOLD}${title}${RESET} `;
+  const remaining = Math.max(0, width - visibleLength(label));
+  return framedLine(`${label}${DIM}${"─".repeat(remaining)}${RESET}`, width);
+}
+
+function renderPill(label: string, value: string): string {
+  return `${DIM}${label}${RESET} ${MAGENTA}${BOLD}${value}${RESET}`;
+}
+
+function renderShortcutRow(shortcuts: readonly string[], width: number): string {
+  const rendered = shortcuts.map((shortcut) => `${CYAN}${shortcut}${RESET}`).join(`${DIM}  │  ${RESET}`);
+  return clipAnsi(rendered, width);
 }
