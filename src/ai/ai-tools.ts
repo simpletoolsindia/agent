@@ -2,6 +2,7 @@ import { jsonSchema, tool, type Tool as AiSdkTool } from "ai";
 import type { ToolContext } from "../core/tool.js";
 import type { ToolRegistry } from "../core/registry.js";
 import { createToolCatalog, type HarnessToolDefinition } from "../tools/catalog.js";
+import { createSubagentTool, type SubagentToolOptions } from "./subagent-tool.js";
 
 export type ApprovalMode = "safe" | "auto";
 
@@ -9,8 +10,12 @@ export type AiToolBundle = {
   readonly tools: Record<string, AiSdkTool>;
   readonly approvals: Record<string, "not-applicable" | "user-approval">;
 };
+export type AiToolBundleOptions = {
+  readonly subagent?: SubagentToolOptions;
+};
 
-export function createAiToolBundle(registry: ToolRegistry, context: ToolContext, approvalMode: ApprovalMode): AiToolBundle {
+
+export function createAiToolBundle(registry: ToolRegistry, context: ToolContext, approvalMode: ApprovalMode, options: AiToolBundleOptions = {}): AiToolBundle {
   const tools: Record<string, AiSdkTool> = {};
   const approvals: Record<string, "not-applicable" | "user-approval"> = {};
 
@@ -19,6 +24,11 @@ export function createAiToolBundle(registry: ToolRegistry, context: ToolContext,
     approvals[definition.tool.name] = approvalMode === "auto" || definition.metadata.safety === "read-only"
       ? "not-applicable"
       : "user-approval";
+  }
+
+  if (options.subagent !== undefined) {
+    tools.subagent = createSubagentTool(registry, context, options.subagent);
+    approvals.subagent = "not-applicable";
   }
 
   return { tools, approvals };

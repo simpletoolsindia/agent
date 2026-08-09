@@ -6,7 +6,6 @@ import { runOpenAICompatibleAiTui } from "../tui/ai-tui.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const DEFAULT_PROVIDER_NAME = "openai-compatible";
-const DEFAULT_MAX_STEPS = "20";
 const DEFAULT_APPROVAL_MODE: ApprovalMode = "safe";
 const DEFAULT_TUI_CONTEXT_SIZE = "32768";
 const DEFAULT_UI_DENSITY = "compact";
@@ -23,7 +22,6 @@ type SharedAgentCommandOptions = {
   readonly baseUrl?: string;
   readonly apiKey?: string;
   readonly providerName?: string;
-  readonly maxSteps: string;
   readonly approvalMode: string;
   readonly autoApprove?: boolean;
 };
@@ -81,7 +79,7 @@ addSharedAgentOptions(
 addTuiOptions(
   addSharedAgentOptions(
     program.command("tui")
-      .description("Open the interactive terminal UI with /settings and /compact commands"),
+      .description("Open the interactive terminal UI with /settings, /compact, and /agents commands"),
   ),
 ).action(async (options: TuiCommandOptions) => {
   const display = resolveTuiDisplay(options);
@@ -103,7 +101,6 @@ function addSharedAgentOptions(command: Command): Command {
     .option("--base-url <url>", "OpenAI-compatible API base URL", process.env.OPENAI_BASE_URL)
     .option("--api-key <key>", "API key", process.env.OPENAI_API_KEY)
     .option("--provider-name <name>", "provider name for logs", DEFAULT_PROVIDER_NAME)
-    .option("--max-steps <count>", "maximum tool loop steps", DEFAULT_MAX_STEPS)
     .option("--approval-mode <mode>", `approval mode: ${APPROVAL_MODE_VALUES.join("|")}`, DEFAULT_APPROVAL_MODE)
     .option("--auto-approve", "shortcut for --approval-mode auto");
 }
@@ -126,7 +123,6 @@ function toRuntimeOptions(options: SharedAgentCommandOptions) {
     baseURL: options.baseUrl,
     apiKey: options.apiKey,
     providerName: options.providerName,
-    maxSteps: parseMaxSteps(options.maxSteps),
     approvalMode: options.autoApprove === true ? "auto" as const : parseApprovalMode(options.approvalMode),
   };
 }
@@ -148,9 +144,6 @@ function resolveTuiDisplay(options: TuiCommandOptions): {
   };
 }
 
-function parseMaxSteps(value: string): number {
-  return parsePositiveInteger(value, "--max-steps");
-}
 
 function parseOptionalPositiveInteger(value: string | undefined, optionName: string): number | undefined {
   return value === undefined ? undefined : parsePositiveInteger(value, optionName);

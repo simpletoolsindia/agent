@@ -184,13 +184,13 @@ TUI slash commands run locally and do not spend an LLM call:
 
 | Command | Action |
 | --- | --- |
-| `/settings show` | Show active model, endpoint, approval, and step settings. |
+| `/settings show` | Show active model, endpoint, approval, and compaction settings. |
 | `/settings model <id>` | Switch the model for future turns. |
 | `/settings base-url <url>` | Switch OpenAI-compatible endpoint for future turns. |
 | `/settings api-key <key>` | Update the API key; use `none` to unset it. |
 | `/settings approval safe\|auto` | Change approval mode without restarting the TUI. |
-| `/settings max-steps <count>` | Change the model/tool loop step budget. |
 | `/compact` | Drop slash-command chatter and prune older tool-heavy history for future turns. |
+| `/agents` | Show the built-in read-only subagent roles. |
 
 Long model starts show a lightweight processing indicator before streaming begins.
 
@@ -281,7 +281,6 @@ Options:
 --base-url <url>        OpenAI-compatible API base URL.
 --api-key <key>         API key.
 --provider-name <name>  Name used in logs.
---max-steps <count>     Maximum model/tool loop steps. Default: 20.
 --approval-mode <mode>  Approval mode: safe|auto. Default: safe.
 --auto-approve          Shortcut for --approval-mode auto.
 -h, --help              Show help.
@@ -301,7 +300,6 @@ Options:
 --base-url <url>             OpenAI-compatible API base URL.
 --api-key <key>              API key.
 --provider-name <name>       Name used in logs.
---max-steps <count>          Maximum model/tool loop steps. Default: 20.
 --approval-mode <mode>       Approval mode: safe|auto. Default: safe.
 --auto-approve               Shortcut for --approval-mode auto.
 --context-size <tokens>      Show context usage percentage in the TUI title. Default: 32768.
@@ -337,10 +335,12 @@ If the file changed after the model read it, the edit is rejected.
 
 CLI and TUI use the same `ToolLoopAgent` setup:
 
-- stable tool order: `search`, `read`, `update`, `write`, `bash`
+- stable tool order: `subagent`, `search`, `read`, `update`, `write`, `bash`
 - step logs with finish reason, tool names, token usage, and elapsed time
 - targeted recovery hints after failed tool results
 - automatic context compaction for long sessions
+- read-only subagent delegation for broad research, review, and non-mutating plans
+- no fixed loop step cap; the loop ends when the model returns a final response instead of another tool call
 
 `bash` accepts one shell command string and runs it in the selected workspace:
 

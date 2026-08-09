@@ -12,7 +12,7 @@ import {
   type OpenAICompatibleCodingAgentOptions,
 } from "../ai/coding-agent.js";
 
-const SETTINGS_KEYS = ["model", "base-url", "api-key", "provider-name", "approval", "max-steps"] as const;
+const SETTINGS_KEYS = ["model", "base-url", "api-key", "provider-name", "approval"] as const;
 const COMPACT_KEEP_MESSAGES = 8;
 const PROCESSING_SPINNER_DELAY_MS = 250;
 const PROCESSING_SPINNER_INTERVAL_MS = 350;
@@ -103,6 +103,8 @@ class SlashCommandAgent {
         return { text: slashHelpText(this.settings, this.compactNextPrompts, this.compactRuns) };
       case "settings":
         return this.applySettingsCommand(command.args);
+      case "agents":
+        return { text: agentsHelpText() };
       case "compact":
         this.compactNextPrompts = true;
         this.compactRuns += 1;
@@ -165,9 +167,6 @@ class SlashCommandAgent {
       case "approval":
         this.settings = { ...this.settings, approvalMode: parseApprovalValue(value) };
         return `approval = ${this.settings.approvalMode ?? "safe"}`;
-      case "max-steps":
-        this.settings = { ...this.settings, maxSteps: parsePositiveInteger(value, "max-steps") };
-        return `max-steps = ${this.settings.maxSteps ?? "20"}`;
     }
   }
 
@@ -187,7 +186,8 @@ class SlashCommandAgent {
 type SlashCommand =
   | { readonly name: "help"; readonly args: readonly string[] }
   | { readonly name: "settings"; readonly args: readonly string[] }
-  | { readonly name: "compact"; readonly args: readonly string[] };
+  | { readonly name: "compact"; readonly args: readonly string[] }
+  | { readonly name: "agents"; readonly args: readonly string[] };
 
 function parseSlashCommand(prompt: string): SlashCommand | undefined {
   const trimmed = prompt.trim();
@@ -205,6 +205,9 @@ function parseSlashCommand(prompt: string): SlashCommand | undefined {
       return { name: "settings", args };
     case "compact":
       return { name: "compact", args };
+    case "agents":
+    case "subagents":
+      return { name: "agents", args };
     default:
       return {
         name: "help",
@@ -270,7 +273,6 @@ function formatSettings(settings: RuntimeSettings, compactEnabled: boolean, comp
     `| api-key | ${settings.apiKey === undefined ? "unset" : "set"} |`,
     `| provider-name | ${settings.providerName ?? "openai-compatible"} |`,
     `| approval | ${settings.approvalMode ?? "safe"} |`,
-    `| max-steps | ${settings.maxSteps ?? 20} |`,
     `| compact | ${compactEnabled ? `enabled (${compactRuns})` : "not yet run"} |`,
     "",
     "Examples:",
@@ -294,10 +296,32 @@ function slashHelpText(settings: RuntimeSettings, compactEnabled: boolean, compa
     "| `/settings base-url <url>` | Switch OpenAI-compatible endpoint. |",
     "| `/settings api-key <key>` | Update API key; `none` unsets it. |",
     "| `/settings approval safe|auto` | Change tool approval mode. |",
-    "| `/settings max-steps <count>` | Change agent loop step budget. |",
     "| `/compact` | Prune old slash chatter and tool-heavy history for future turns. |",
+    "| `/agents` | Show built-in read-only subagent modes and delegation examples. |",
     "",
     formatSettings(settings, compactEnabled, compactRuns),
+  ].join("\n");
+}
+
+function agentsHelpText(): string {
+  return [
+    "## Built-in subagents",
+    "",
+    "Harness exposes one read-only `subagent` tool to the model. It offloads broad research into a separate context window, then returns a concise evidence-backed summary.",
+    "",
+    "| Role | Use when | Tools |",
+    "| --- | --- | --- |",
+    "| `research` | Mapping unfamiliar code or collecting references before an edit. | `search`, `read` |",
+    "| `review` | Checking a proposed change for bugs, regressions, and missing verification. | `search`, `read` |",
+    "| `plan` | Creating a non-mutating implementation plan for larger work. | `search`, `read` |",
+    "",
+    "Example model-facing delegation:",
+    "",
+    "```json",
+    "{ \"role\": \"research\", \"task\": \"Map TUI startup flow and summarize files to edit\" }",
+    "```",
+    "",
+    "Edits still happen in the main agent with normal `update`/`write` approval.",
   ].join("\n");
 }
 

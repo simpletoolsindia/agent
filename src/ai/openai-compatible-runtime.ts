@@ -7,12 +7,11 @@ export type OpenAICompatibleModelOptions = {
   readonly providerName?: string;
 };
 
-export const DEFAULT_MAX_STEPS = 20;
 export const DEFAULT_CONTEXT_SIZE = 32768;
 
 
 export const CODING_INSTRUCTIONS = [
-  "You are a precise coding harness using exactly five tools: search, bash, write, update, read.",
+  "You are a precise coding harness using five workspace tools: search, bash, write, update, read, plus one read-only subagent tool for context-heavy research.",
   "Use search before read when locating unknown code.",
   "Use read before update, then pass the fresh fileHash and rangeHash to update.",
   "Prefer update for existing files and write for new files or intentional full replacement.",
@@ -20,6 +19,7 @@ export const CODING_INSTRUCTIONS = [
   "When bash returns a non-zero exitCode, inspect stdout/stderr and fix the command or code.",
   "When a tool returns ok=false, read the code/details, recover with a different action, and continue the loop.",
   "For PATH_NOT_FOUND, search or list the parent directory instead of stopping.",
+  "Use subagent for broad codebase research, reviews, or non-mutating plans when the main context would get noisy.",
 ].join("\n");
 
 /** Builds the chat model once per run while keeping provider setup out of runners. */

@@ -180,11 +180,14 @@ async function main(): Promise<void> {
   }, context)));
 
   const slashAgent = createSlashCommandAgent({ cwd: workspace, model: "gpt-4o-mini", apiKey: "test" });
-  const settingsText = await collectSlashText(slashAgent, "/settings model qwen2.5-coder:7b approval auto max-steps 7");
+  const settingsText = await collectSlashText(slashAgent, "/settings model qwen2.5-coder:7b approval auto");
   results.push(recordCheck("slash settings updates runtime config", settingsText.includes("qwen2.5-coder:7b") && settingsText.includes("| approval | auto |")));
 
   const compactText = await collectSlashText(slashAgent, "/compact");
   results.push(recordCheck("slash compact returns local confirmation", compactText.includes("Context compacted")));
+
+  const agentsText = await collectSlashText(slashAgent, "/agents");
+  results.push(recordCheck("slash agents documents subagent roles", agentsText.includes("Built-in subagents") && agentsText.includes("research") && agentsText.includes("review") && agentsText.includes("plan")));
 
   const setupOptions = resolveProviderSetupOptions({ cwd: workspace, model: "gpt-4o-mini", baseURL: undefined, apiKey: "old" }, {
     model: "qwen2.5-coder:7b",

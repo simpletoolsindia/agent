@@ -1,5 +1,4 @@
 import {
-  isStepCount,
   pruneMessages,
   ToolLoopAgent,
   type ModelMessage,
@@ -11,18 +10,16 @@ import { createAiToolBundle, type ApprovalMode } from "./ai-tools.js";
 import {
   CODING_INSTRUCTIONS,
   DEFAULT_CONTEXT_SIZE,
-  DEFAULT_MAX_STEPS,
   createOpenAICompatibleChatModel,
   type OpenAICompatibleModelOptions,
 } from "./openai-compatible-runtime.js";
 
-const TOOL_ORDER = ["search", "read", "update", "write", "bash"] as const;
+const TOOL_ORDER = ["subagent", "search", "read", "update", "write", "bash"] as const;
 const COMPACTION_RATIO = 0.7;
 const RECENT_TOOL_MESSAGES_TO_KEEP = 5;
 
 export type OpenAICompatibleCodingAgentOptions = OpenAICompatibleModelOptions & {
   readonly cwd: string;
-  readonly maxSteps?: number;
   readonly approvalMode?: ApprovalMode;
   readonly contextSize?: number;
   readonly logger?: Logger;
@@ -40,7 +37,14 @@ export function createOpenAICompatibleCodingAgent(options: OpenAICompatibleCodin
   const logger = options.logger ?? new JsonConsoleLogger(options.loggerScope ?? "agent", options.loggerLevel ?? "info");
   const harness = createHarness(options.cwd, logger);
   const approvalMode = options.approvalMode ?? "safe";
-  const toolBundle = createAiToolBundle(harness.registry, harness.context, approvalMode);
+  const toolBundle = createAiToolBundle(harness.registry, harness.context, approvalMode, {
+    subagent: {
+      model: options.model,
+      apiKey: options.apiKey,
+      baseURL: options.baseURL,
+      providerName: options.providerName,
+    },
+  });
   const contextSize = options.contextSize ?? DEFAULT_CONTEXT_SIZE;
 
   const agent = new ToolLoopAgent({
@@ -48,7 +52,6 @@ export function createOpenAICompatibleCodingAgent(options: OpenAICompatibleCodin
     instructions: CODING_INSTRUCTIONS,
     tools: toolBundle.tools,
     toolApproval: toolBundle.approvals,
-    stopWhen: isStepCount(options.maxSteps ?? DEFAULT_MAX_STEPS),
     toolOrder: [...TOOL_ORDER],
     prepareStep: ({ stepNumber, steps, messages }) => {
       const failureHint = formatFailureHint(steps);
