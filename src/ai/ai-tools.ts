@@ -3,6 +3,7 @@ import type { ToolContext } from "../core/tool.js";
 import type { ToolRegistry } from "../core/registry.js";
 import { createToolCatalog, type HarnessToolDefinition } from "../tools/catalog.js";
 import { createSubagentTool, type SubagentToolOptions } from "./subagent-tool.js";
+import { createTodoTool } from "./todo-tool.js";
 
 export type ApprovalMode = "safe" | "auto";
 
@@ -25,6 +26,9 @@ export function createAiToolBundle(registry: ToolRegistry, context: ToolContext,
       ? "not-applicable"
       : "user-approval";
   }
+
+  tools.todo = createTodoTool();
+  approvals.todo = "not-applicable";
 
   if (options.subagent !== undefined) {
     tools.subagent = createSubagentTool(registry, context, options.subagent);

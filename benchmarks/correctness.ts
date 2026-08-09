@@ -312,6 +312,19 @@ async function main(): Promise<void> {
       && codingAgentSource.includes("SUBAGENT_ABORTED"),
   ));
 
+  const aiToolsSource = await readFile("src/ai/ai-tools.ts", "utf8");
+  const todoToolSource = await readFile("src/ai/todo-tool.ts", "utf8");
+  results.push(recordCheck(
+    "todo tool exposes active and pending tasks",
+    codingAgentSource.includes("\"todo\", \"subagent\"")
+      && aiToolsSource.includes("tools.todo = createTodoTool()")
+      && aiToolsSource.includes("approvals.todo = \"not-applicable\"")
+      && todoToolSource.includes("status: { enum: [\"pending\", \"in_progress\", \"done\", \"blocked\"] }")
+      && todoToolSource.includes("current")
+      && todoToolSource.includes("pending"),
+  ));
+
+
   const contextInstructions = createCodingInstructions(workspace, loadInstructionDocuments(workspace, {
     agentMdPath: "AGENT.md",
     skillsMdPath: "SKILLS.md",
@@ -509,7 +522,7 @@ async function main(): Promise<void> {
   const patchedTuiSource = await readFile("node_modules/@ai-sdk/tui/dist/index.js", "utf8");
   results.push(recordCheck(
     "TUI tool and reasoning outputs use referenced box frames",
-    patchedTuiSource.includes("rich tui patch v16")
+    patchedTuiSource.includes("rich tui patch v17")
       && patchedTuiSource.includes("renderHarnessOutputBox")
       && patchedTuiSource.includes("harnessSeparator")
       && patchedTuiSource.includes("formatHarnessBashFrame")
@@ -530,6 +543,9 @@ async function main(): Promise<void> {
       && patchedTuiSource.includes("recallHarnessPrompt(key.type")
       && patchedTuiSource.includes("[pasted context]")
       && patchedTuiSource.includes("normalizeHarnessPaste(value)")
+      && patchedTuiSource.includes("Current:")
+      && patchedTuiSource.includes("Pending:")
+      && patchedTuiSource.includes("todoStatusIcon(status)")
       && (patchedTuiSource.match(/const harnessFrame = formatHarnessToolFrame\(toolName, inputText, part, status\)/g) ?? []).length === 1
   ));
 

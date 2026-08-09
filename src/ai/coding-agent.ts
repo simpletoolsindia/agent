@@ -16,8 +16,8 @@ import {
   type OpenAICompatibleModelOptions,
 } from "./openai-compatible-runtime.js";
 
-const TOOL_ORDER = ["subagent", "search", "read", "update", "write", "bash"] as const;
-const PARALLEL_TOOL_HINT = "Issue independent read/search/bash/subagent calls in the same model step so the runtime can execute them in parallel; keep write/update calls serialized when they touch the same file.";
+const TOOL_ORDER = ["todo", "subagent", "search", "read", "update", "write", "bash"] as const;
+const PARALLEL_TOOL_HINT = "Issue independent read/search/bash/subagent calls in the same model step so the runtime can execute them in parallel; keep todo current, and keep write/update calls serialized when they touch the same file.";
 const COMPACTION_RATIO = 0.7;
 const RECENT_TOOL_MESSAGES_TO_KEEP = 5;
 const LOOP_STEP_LIMIT = 80;
