@@ -5,6 +5,9 @@ const YELLOW = `${ESC}[33m`;
 const CYAN = `${ESC}[36m`;
 const BLUE = `${ESC}[34m`;
 const MAGENTA = `${ESC}[35m`;
+const GRAY = `${ESC}[90m`;
+const BRIGHT_WHITE = `${ESC}[97m`;
+const BRIGHT_YELLOW = `${ESC}[93m`;
 const DIM = `${ESC}[2m`;
 const BOLD = `${ESC}[1m`;
 const RESET = `${ESC}[0m`;
@@ -16,6 +19,9 @@ export const RICH_UI = {
   yellow: YELLOW,
   cyan: CYAN,
   magenta: MAGENTA,
+  gray: GRAY,
+  brightWhite: BRIGHT_WHITE,
+  brightYellow: BRIGHT_YELLOW,
   dim: DIM,
   bold: BOLD,
   reset: RESET,
@@ -31,12 +37,17 @@ export type StatusMetric = {
 
 export function renderStatusBar(label: string, message: string, width: number, tone: StatusTone = "idle", progress?: number): string {
   const safeWidth = Math.max(20, width);
-  const barWidth = Math.max(6, Math.min(16, Math.floor(safeWidth / 6)));
+  const barWidth = Math.max(6, Math.min(18, Math.floor(safeWidth / 6)));
   const normalizedProgress = progress === undefined ? defaultProgress(tone) : Math.min(1, Math.max(0, progress));
-  const filled = Math.round(barWidth * normalizedProgress);
   const color = toneColor(tone);
-  const bar = `${color}${"▰".repeat(filled)}${DIM}${"▱".repeat(barWidth - filled)}${RESET}`;
-  const prefix = `${DIM}╭${RESET} ${color}${BOLD}${label}${RESET} ${bar} ${DIM}│${RESET}`;
+  const bar = renderProgressBar({
+    current: Math.round(normalizedProgress * 100),
+    total: 100,
+    width: barWidth,
+    gradient: tone !== "idle",
+  });
+  const percent = `${Math.round(normalizedProgress * 100).toString().padStart(3)}%`;
+  const prefix = `${DIM}╭${RESET} ${color}${BOLD}${label}${RESET} ${bar} ${BRIGHT_WHITE}${BOLD}${percent}${RESET} ${DIM}│${RESET}`;
   const available = Math.max(0, safeWidth - visibleLength(prefix) - 1);
   return `${prefix} ${clipAnsi(message, available)}`;
 }
@@ -44,7 +55,63 @@ export function renderStatusBar(label: string, message: string, width: number, t
 export function renderActivityPulse(label: string, message: string, width: number, frame: number, tone: StatusTone = "busy"): string {
   const spinner = SPINNER_FRAMES[Math.abs(Math.trunc(frame)) % SPINNER_FRAMES.length];
   const wave = 0.5 + Math.sin(frame / 2) * 0.25;
-  return renderStatusBar(`${spinner} ${label}`, message, width, tone, tone === "busy" ? wave : undefined);
+  const animatedLabel = tone === "busy" ? renderShimmerText(label, frame) : label;
+  return renderStatusBar(`${spinner} ${animatedLabel}`, message, width, tone, tone === "busy" ? wave : undefined);
+}
+
+export type ProgressBarRenderOptions = {
+  readonly current: number;
+  readonly total?: number;
+  readonly width?: number;
+  readonly completeChar?: string;
+  readonly incompleteChar?: string;
+  readonly gradient?: boolean;
+};
+
+export function renderProgressBar(options: ProgressBarRenderOptions): string {
+  const total = Math.max(1, options.total ?? 100);
+  const width = Math.max(1, options.width ?? 16);
+  const completeChar = options.completeChar ?? "█";
+  const incompleteChar = options.incompleteChar ?? "░";
+  const ratio = Math.min(1, Math.max(0, options.current / total));
+  const filled = Math.round(width * ratio);
+  const empty = width - filled;
+
+  if (options.gradient !== false && filled > 0) {
+    let bar = "";
+    for (let index = 0; index < filled; index += 1) {
+      const t = filled > 1 ? index / (filled - 1) : ratio;
+      const red = Math.round(255 * (1 - t));
+      const green = Math.round(255 * t);
+      bar += `${rgb(red, green, 50)}${completeChar}`;
+    }
+    return `${bar}${RESET}${GRAY}${incompleteChar.repeat(empty)}${RESET}`;
+  }
+
+  return `${CYAN}${completeChar.repeat(filled)}${RESET}${GRAY}${incompleteChar.repeat(empty)}${RESET}`;
+}
+
+export function renderShimmerText(text: string, frame: number, sparkleChars: readonly string[] = ["✦", "✧", "⋆", "·"]): string {
+  let output = "";
+  let sparkleIndex = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index] ?? "";
+    if (character === " ") {
+      output += character;
+      continue;
+    }
+    const sparklePhase = Math.sin((frame * 0.3) + (index * 0.7)) * 0.5 + 0.5;
+    if (sparklePhase > 0.85) {
+      const sparkle = sparkleChars[sparkleIndex % sparkleChars.length] ?? "✦";
+      sparkleIndex += 1;
+      output += `${BRIGHT_YELLOW}${BOLD}${sparkle}${RESET}`;
+    } else if (sparklePhase > 0.6) {
+      output += `${BRIGHT_WHITE}${BOLD}${character}${RESET}`;
+    } else {
+      output += `${CYAN}${character}${RESET}`;
+    }
+  }
+  return output;
 }
 
 export function renderCliPanel(title: string, rows: readonly string[], width: number = 88): string {
@@ -146,6 +213,10 @@ function ansiEndIndex(text: string, start: number): number {
   return match?.index === 0 ? start + match[0].length : start + 1;
 }
 
+
+function rgb(red: number, green: number, blue: number): string {
+  return `${ESC}[38;2;${red};${green};${blue}m`;
+}
 function defaultProgress(tone: StatusTone): number {
   switch (tone) {
     case "busy":

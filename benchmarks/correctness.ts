@@ -7,7 +7,7 @@ import { createSlashCommandAgent, pickRuntimeSuggestion, withInlineProgress } fr
 import { reduceProviderSetupInput, renderProviderSetupScreen, resolveProviderSetupOptions } from "../src/tui/provider-setup.js";
 import { createCodingInstructions } from "../src/ai/openai-compatible-runtime.js";
 import { loadInstructionDocuments } from "../src/ai/context-files.js";
-import { renderActivityPulse, renderCliSplash, renderMetricStrip, renderProgressSteps, renderStatusBar, visibleLength } from "../src/tui/status-bar.js";
+import { renderActivityPulse, renderCliSplash, renderMetricStrip, renderProgressBar, renderProgressSteps, renderShimmerText, renderStatusBar, visibleLength } from "../src/tui/status-bar.js";
 
 const workspace = join(process.cwd(), ".correctness-workspace");
 
@@ -341,7 +341,7 @@ async function main(): Promise<void> {
   const statusBar = renderStatusBar("Processing", "Waiting for model response or tool stream", 48, "busy");
   results.push(recordCheck(
     "status bar renders bounded processing state",
-    statusBar.includes("Processing") && statusBar.includes("▰") && visibleLength(statusBar) <= 48,
+    statusBar.includes("Processing") && statusBar.includes("█") && statusBar.includes("%") && visibleLength(statusBar) <= 48,
   ));
 
   const activityPulse = renderActivityPulse("AI running", "Use search before read", 56, 2, "busy");
@@ -349,7 +349,7 @@ async function main(): Promise<void> {
   results.push(recordCheck(
     "rich CLI panels render animated affordances",
     activityPulse.includes("⠹")
-      && activityPulse.includes("AI running")
+      && activityPulse.includes("✦")
       && cliSplash.includes("Harness AI · rich cockpit")
       && cliSplash.includes("parallel search/read/bash")
       && cliSplash.includes("◆ prompt"),
@@ -357,11 +357,15 @@ async function main(): Promise<void> {
 
   const metricStrip = renderMetricStrip([{ label: "model", value: "qwen", tone: "busy" }, { label: "approval", value: "auto", tone: "success" }], 48);
   const progressSteps = renderProgressSteps(["think", "tools", "answer"], 1, 48);
+  const gradientBar = renderProgressBar({ current: 65, total: 100, width: 12, gradient: true });
+  const shimmerText = renderShimmerText("Processing", 2);
   results.push(recordCheck(
-    "shared rich primitives render segmented OMP-like UI",
+    "shared rich primitives render shimmer and progress UI",
     metricStrip.includes("model")
       && metricStrip.includes("approval")
       && progressSteps.includes("◆ tools")
+      && gradientBar.includes("░")
+      && shimmerText.includes("✦")
       && visibleLength(progressSteps) <= 48,
   ));
 

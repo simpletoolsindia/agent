@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v2 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v3 */";
 
 /** Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks. */
 export async function patchAiSdkTuiRenderer(): Promise<void> {
@@ -36,6 +36,7 @@ export async function patchAiSdkTuiRenderer(): Promise<void> {
 
   patched = replaceIfPresent(patched, originalTopBorder(), patchedTopBorder());
   patched = replaceIfPresent(patched, originalBottomBorder(), patchedBottomBorder());
+  patched = replaceIfPresent(patched, currentViewportProgress(), patchedViewportProgress());
   patched = patched
     .replace('{ kind: "user", title: "User", content: prompt }', '{ kind: "user", title: "You", content: prompt }')
     .replace('title: "Assistant",', 'title: "Assistant · reply",')
@@ -159,6 +160,47 @@ function patchedBottomBorder(): string {
   ].join("\n");
 }
 
+function currentViewportProgress(): string {
+  return [
+    "function renderViewportProgress(message, width) {",
+    "  const contentWidth = Math.max(20, width - 4);",
+    "  const barWidth = Math.max(8, Math.min(20, Math.floor(contentWidth / 5)));",
+    "  const lower = message.toLowerCase();",
+    "  const progress = lower.includes(\"executing\") ? 0.7 : lower.includes(\"processing\") ? 0.45 : lower.includes(\"streaming\") ? 0.25 : 1;",
+    "  const filled = Math.max(1, Math.round(barWidth * progress));",
+    "  const bar = `${colors.tool}${\"▰\".repeat(filled)}${colors.dim}${\"▱\".repeat(barWidth - filled)}${colors.reset}`;",
+    "  return `${bar} ${colors.dim}scroll ↑/↓ PgUp/PgDn${colors.reset} · ${message}`;",
+    "}",
+  ].join("\n");
+}
+
+function patchedViewportProgress(): string {
+  return [
+    "function renderViewportProgress(message, width) {",
+    "  const contentWidth = Math.max(20, width - 4);",
+    "  const barWidth = Math.max(8, Math.min(24, Math.floor(contentWidth / 4)));",
+    "  const lower = message.toLowerCase();",
+    "  const progress = lower.includes(\"executing\") ? 0.7 : lower.includes(\"processing\") ? 0.45 : lower.includes(\"streaming\") ? 0.25 : 1;",
+    "  const current = Math.round(progress * 100);",
+    "  const bar = renderHarnessProgressBar(current, 100, barWidth);",
+    "  return `${bar} ${colors.assistant}${String(current).padStart(3)}%${colors.reset} ${colors.dim}scroll ↑/↓ PgUp/PgDn${colors.reset} · ${message}`;",
+    "}",
+    "function renderHarnessProgressBar(current, total, width) {",
+    "  const ratio = Math.max(0, Math.min(1, current / Math.max(1, total)));",
+    "  const filled = Math.round(width * ratio);",
+    "  const empty = width - filled;",
+    "  let bar = \"\";",
+    "  for (let index = 0; index < filled; index += 1) {",
+    "    const t = filled > 1 ? index / (filled - 1) : ratio;",
+    "    const red = Math.round(255 * (1 - t));",
+    "    const green = Math.round(255 * t);",
+    "    bar += `\\x1B[38;2;${red};${green};50m█`;",
+    "  }",
+    "  return `${bar}${colors.reset}${colors.dim}${\"░\".repeat(empty)}${colors.reset}`;",
+    "}",
+  ].join("\n");
+}
+
 function originalBoxLine(): string {
   return [
     "function boxLine(line, width) {",
@@ -175,15 +217,7 @@ function originalBoxLine(): string {
 function patchedBoxLine(): string {
   return [
     ...originalBoxLine().split("\n"),
-    "function renderViewportProgress(message, width) {",
-    "  const contentWidth = Math.max(20, width - 4);",
-    "  const barWidth = Math.max(8, Math.min(20, Math.floor(contentWidth / 5)));",
-    "  const lower = message.toLowerCase();",
-    "  const progress = lower.includes(\"executing\") ? 0.7 : lower.includes(\"processing\") ? 0.45 : lower.includes(\"streaming\") ? 0.25 : 1;",
-    "  const filled = Math.max(1, Math.round(barWidth * progress));",
-    "  const bar = `${colors.tool}${\"▰\".repeat(filled)}${colors.dim}${\"▱\".repeat(barWidth - filled)}${colors.reset}`;",
-    "  return `${bar} ${colors.dim}scroll ↑/↓ PgUp/PgDn${colors.reset} · ${message}`;",
-    "}",
+    ...patchedViewportProgress().split("\n"),
   ].join("\n");
 }
 
