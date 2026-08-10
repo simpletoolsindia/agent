@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-const PATCH_MARKER = "/* harness-tools rich tui patch v19 */";
+const PATCH_MARKER = "/* harness-tools rich tui patch v20 */";
 
 /**
  * Applies narrow runtime patches to @ai-sdk/tui until upstream exposes renderer hooks.
@@ -368,7 +368,7 @@ function patchedViewportProgress(): string {
     "  const padding = \" \".repeat(Math.max(0, inner - visibleLength(visible)));",
     "  return `${colors.dim}╰${colors.reset}${visible}${padding}${colors.dim}╯${colors.reset}`;",
     "}",
-  ].join("\\n");
+  ].join("\n");
 }
 
 function originalActiveControls(): string {
